@@ -1,0 +1,412 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "create_dataset",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "extra_tools/create_data.py",
+            "console": "integratedTerminal",
+            "args": [
+                "nuscenes", "--root-path", "./data/nuscenes",
+                "--out-dir", "./data/nuscenes", "--extra-tag", "nuscenes_unified"
+            ]
+        },
+        {
+            "name": "pretrain",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "/mnt/data2/zhanghm/miniconda3/envs/unipad_py38/bin/python",
+            "module": "torch.distributed.launch",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "5", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+                "CUDA_BLOCKING": "1",
+                "CUDA_LAUNCH_BLOCKING": "1"
+            },
+            "args": [
+                "--nproc_per_node=1",
+                "--master_port=28889",
+                "./tools/train.py",
+                // "projects/configs/unipad/uvtr_cam_vs0.1_pretrain_3f.py",
+                "projects/configs/cvpr/uvtr_3dgs_cam_vs0.1_pretrain_depth_ssl_w_flow_ssl_enhance_w_refine.py",
+                // "projects/configs/gs3d/uvtr_3dgs_cam_vs0.1_pretrain_depth_ssl_w_flow_ssl_rgb_w_refine.py",
+                "--launcher",
+                "pytorch",
+                "--no-validate",
+                "--work-dir", "work_dirs/debug"
+            ]
+        },
+        {
+            "name": "test_pretrain",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "/mnt/data2/zhanghm/miniconda3/envs/unipad_py38/bin/python",
+            "module": "torch.distributed.launch",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0,1,2,3", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+                "CUDA_BLOCKING": "1",
+                "CUDA_LAUNCH_BLOCKING": "1"
+            },
+            "args": [
+                "--nproc_per_node=1",
+                "--master_port=28999",
+                "./tools/test.py",
+                // "projects/configs/gs3d/uvtr_3dgs_cam_vs0.1_pretrain_overfitting.py",
+                // "work_dirs/uvtr_3dgs_cam_vs0.1_pretrain_overfitting/latest.pth",
+
+                // "work_dirs/uvtr_3dgs_cam_vs0.1_pretrain_depth_ssl_v2_w_rgb_weight_10/uvtr_3dgs_cam_vs0.1_pretrain_depth_ssl_v2.py",
+                // "work_dirs/uvtr_3dgs_cam_vs0.1_pretrain_depth_ssl_v2_w_rgb_weight_10/epoch_12.pth",
+
+                // "work_dirs/3dgs_cam_vs0.1_pretrain_rgb_ssl_w_gt_depth/3dgs_cam_vs0.1_pretrain_rgb_ssl_w_gt_depth.py",
+                // "work_dirs/3dgs_cam_vs0.1_pretrain_rgb_ssl_w_gt_depth/epoch_12.pth",
+
+                "work_dirs/uvtr_3dgs_cam_vs0.1_pretrain/uvtr_3dgs_cam_vs0.1_pretrain.py",
+                "work_dirs/uvtr_3dgs_cam_vs0.1_pretrain/epoch_12.pth",
+
+                // "projects/configs/gs3d/uvtr_3dgs_cam_vs0.1_pretrain_depth_ssl.py",
+                // "work_dirs/uvtr_3dgs_cam_vs0.1_pretrain_depth_ssl/latest.pth",
+                "--launcher",
+                "pytorch",
+                "--eval",
+                "bbox"
+            ]
+        },
+        {
+            "name": "finetune",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "/mnt/data2/zhanghm/miniconda3/envs/unipad_py38/bin/python",
+            "module": "torch.distributed.launch",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "7", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}"
+            },
+            "args": [
+                "--nproc_per_node=1",
+                "--master_port=28777",
+                "./tools/train.py",
+                "projects/configs/unipad_final/final_uvtr_cam_vs0.075_finetune_occ.py",
+                "--launcher",
+                "pytorch",
+                "--work-dir", "work_dirs/debug",
+                // "--load-from", "work_dirs/uvtr_3dgs_cam_vs0.1_pretrain/epoch_12.pth"
+            ]
+        },
+
+        {
+            "name": "visualize",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./tools/analysis_tools/visualize/run.py",
+
+            "python": "/home/yzhu/anaconda3/envs/uniad/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0,1", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}"
+            },
+            "args": [
+                "--predroot", "output/base_track_map/results_mini.pkl",                    
+                "--out_folder", "debug_output/uniad"
+            ]
+
+        },
+
+        {
+            "name": "test_finetune",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./tools/test.py",
+
+            "python": "/home/yzhu/anaconda3/envs/unipad_py38/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "1", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}"
+            },
+            "args": [
+                "projects/configs/unipad_abl/abl_uvtr_cam_vs0.1_finetune.py",
+                // "work_dirs/abl_uvtr_cam_vs0.1_finetune/epoch_12.pth",
+                "work_dirs/abl_uvtr_cam_vs0.1_finetune/uni3dgs_epoch_12.pth",                                        
+                "--eval", "bbox",
+                // "--out", "debug_work_dirs/results_abl_uvtr_cam_vs0.1_finetune/results_nusc.pkl"
+            ]
+
+        },
+        
+
+        {
+            "name": "test_finetune_case_eval",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./tools/test_case_eval.py",
+
+            "python": "/home/yzhu/anaconda3/envs/unipad_py38/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0,1", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}"
+            },
+            "args": [
+                "projects/configs/unipad_abl/abl_uvtr_cam_vs0.1_finetune_case_eval.py",
+                // "work_dirs/abl_uvtr_cam_vs0.1_finetune/epoch_12.pth",
+                "work_dirs/abl_uvtr_cam_vs0.1_finetune/uni3dgs_epoch_12.pth",                                        
+                "--eval", "bbox",
+                // "--out", "debug_work_dirs/results_abl_uvtr_cam_vs0.1_finetune/results_nusc.pkl"
+            ]
+
+        },
+
+
+
+        {
+            "name": "uni3dgs_visualize",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./tools/analysis_tools/visualize/uni3dgs_run.py",
+
+            "python": "/home/yzhu/anaconda3/envs/unipad_py38/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0,1", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}"
+            },
+            "args": [
+                "--predroot", "debug_work_dirs/results_abl_uvtr_cam_vs0.1_finetune/uni3dgs_all_results_nusc.pkl",                    
+                // "--out_folder", "debug_output/uni3dgs"
+                // "--out_folder", "debug_output/visionpad_sup"
+                "--out_folder", "debug_output/visionpad_sup_v2"
+            ]
+
+        },
+
+
+
+        {
+            "name": "maigcdrive_unipad_train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./tools/train.py",
+
+            "python": "/home/yzhu/anaconda3/envs/magicdrive-py38/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+                "XFORMERS_FORCE_DISABLE_TRITON": "1",
+            },
+
+            "args": [
+                "+exp=UniPAD_224x400"                                 
+            ]
+        },
+
+
+        {
+            "name": "maigcdrive_unipad_test",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./tools/test_reconstruct.py",
+
+            "python": "/home/yzhu/anaconda3/envs/magicdrive-py38/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+                "XFORMERS_FORCE_DISABLE_TRITON": "1",
+            },
+
+            "args": [
+                "resume_from_checkpoint=./magicdrive-log/UniPAD-SDv1.5mv-rawbox_2024-12-04_19-58_UniPAD_224x400"                                 
+            ]
+        },
+
+
+        {
+            "name": "maigcdrive_rgbocc_train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./tools/train.py",
+
+            "python": "/home/yzhu/anaconda3/envs/magicdrive-py38/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+                "XFORMERS_FORCE_DISABLE_TRITON": "1",
+            },
+
+            "args": [
+                "+exp=RgbOcc_224x400"                                 
+            ]
+        },
+
+        {
+            "name": "sparseocc_custom_img_ray",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "custom_img_ray.py",
+
+            "python": "/home/yzhu/anaconda3/envs/magicdrive-py38/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+                "CUDA_LAUNCH_BLOCKING": "1"
+            },
+
+            // "args": [
+            //     "--pred-dir", "prediction/test_ray_metrics"                               
+            // ]
+        },
+
+
+        {
+            "name": "nerf",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "nerf.py",
+
+            "python": "/home/yzhu/anaconda3/envs/magicdrive-py38/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+            },
+
+            // "args": [
+            //     "--pred-dir", "prediction/test_ray_metrics"                               
+            // ]
+        },
+
+
+        // {
+        //     "name": "drivingdojo_train",
+        //     "type": "debugpy",
+        //     "request": "launch",
+
+        //     "program": "./debug_train_video_svd_fsdp.py",
+
+            
+        //     "python": "/home/yzhu/anaconda3/envs/dojo/bin/python",
+        //     "console": "integratedTerminal",
+        //     "justMyCode": false,
+        //     "cwd": "./diffusers",
+
+        //     "env": {
+        //         "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+        //         "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+        //     },
+
+        //     // "args": [
+        //     //     "--project_name", "DriveDreamer2",
+        //     //     "--config_name", "custom_drivedreamer2_img_cond",
+        //     //     "--runners", "drivedreamer2.DriveDreamer2_Tester"
+        //     // ]
+        // },
+
+
+        {
+            "name": "drivingdojo_inference",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./inference/img2video.py",
+
+            
+            "python": "/home/yzhu/anaconda3/envs/dojo/bin/python",
+            "console": "integratedTerminal",
+            "cwd": "/home/yzhu/Drivingdojo/diffusers/examples/world_model",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+            },
+
+            // "args": [
+            //     "--project_name", "DriveDreamer2",
+            //     "--config_name", "custom_drivedreamer2_img_cond",
+            //     "--runners", "drivedreamer2.DriveDreamer2_Tester"
+            // ]
+        },
+
+        {
+            "name": "drivingdojo_train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "accelerate.commands.launch",          //调试accelerate launch
+            
+            "python": "/home/yzhu/anaconda3/envs/dojo/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "/home/yzhu/Drivingdojo/diffusers",
+
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+            },
+
+            "args": [
+                "--config_file", "examples/world_model/configs/fsdp.yaml", "--main_process_port", "12003", "examples/world_model/custom_train_video_svd_fsdp.py", 
+                // "--pretrained_model_name_or_path=../pretrain/stable-video-diffusion-img2vid-xt", 
+                "--pretrained_model_name_or_path=examples/world_model/demo_model/img2video_1024_14f", 
+                "--dataset_name=../data/nusc_video_all_cam.pkl", "--use_ema",
+                "--train_batch_size", "1", "--gradient_accumulation_steps", "1", "--enable_xformers_memory_efficient_attention", "--max_train_steps=40000", "--learning_rate=5e-05", "--max_grad_norm=1",
+                "--lr_scheduler=constant", "--output_dir=work_dirs/nusc_fsdp_svd_front_576320_30f", "--dataloader_num_workers", "6", 
+                // "--nframes", "30", 
+                "--nframes", "2", 
+                "--fps", "5",
+                "--image_height", "320", "--image_width", "576", "--conditioning_dropout_prob=0.2", "--seed_for_gen=42", "--ddim", "--checkpointing_steps",
+                "20000", "--tracker_project_name", "nusc_fsdp_svd_front", "--load_from_pkl", "--gradient_checkpointing", "--report_to", "wandb"
+            ]
+        },
+
+        {
+            "name": "drivingdojo_nusc_video",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/world_model/data_process/custom_nusc_video.py",
+
+            
+            "python": "/home/yzhu/anaconda3/envs/dojo/bin/python",
+            "console": "integratedTerminal",
+            "cwd": "/home/yzhu/Drivingdojo/diffusers",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+            },
+
+            "args": [
+                "--nusc_root", "../data/nuscenes",
+                "--output_dir", "../data/sample_extracted_videos",
+                
+            ]
+
+        },
+
+    ]
+}
