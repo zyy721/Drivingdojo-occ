@@ -52,7 +52,9 @@ from diffusers.utils.import_utils import is_xformers_available
 from torchvision import transforms
 
 # ours code base
-from utils.video_datasets import VideoNuscenesDataset
+# from utils.video_datasets import VideoNuscenesDataset
+from utils.custom_video_datasets import VideoNuscenesDataset
+
 from diffusers import StableVideoDiffusionPipeline
 from diffusers.models import UNetSpatioTemporalConditionModel, AutoencoderKLTemporalDecoder
 from transformers import (
@@ -67,6 +69,11 @@ from diffusers.utils.torch_utils import randn_tensor
 
 if is_wandb_available():
     import wandb
+
+from src.model.unet_spatio_temporal_condition_multiview import UNetSpatioTemporalConditionModelMultiview
+
+# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
 
 logger = get_logger(__name__, log_level="INFO")
 
@@ -765,7 +772,25 @@ def main():
     # `from_pretrained` So CLIPTextModel and AutoencoderKL will not enjoy the parameter sharding
     # across multiple gpus and only UNet2DConditionModel will get ZeRO sharded.
     
-    unet = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
+    # unet = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
+    unet_origin = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
+    unet_param = {
+        "trainable_state": "only_new",  # only_new or all
+        # "neighboring_view_pair": {0: [5, 1],
+        #                           1: [0, 2],
+        #                           2: [1, 3],
+        #                           3: [2, 4],
+        #                           4: [3, 5],
+        #                           5: [4, 0]},
+        "neighboring_view_pair": {0: [2, 1],
+                                  1: [0, 2],
+                                  2: [1, 0]},
+        "neighboring_attn_type": "add",
+        "zero_module_type": "zero_linear",
+        "crossview_attn_type": 'basic',
+        "img_size": [224, 400]
+    }
+    unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
     
     # tokenizer = CLIPTokenizer.from_pretrained(
     #     args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
@@ -784,8 +809,12 @@ def main():
     
     # Create EMA for the unet.
     if args.use_ema:
-        ema_unet = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision)
-        ema_unet = EMAModel(ema_unet.parameters(), model_cls=UNetSpatioTemporalConditionModel, model_config=ema_unet.config)
+        # ema_unet = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision)
+        # ema_unet = EMAModel(ema_unet.parameters(), model_cls=UNetSpatioTemporalConditionModel, model_config=ema_unet.config)
+
+        ema_unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
+        ema_unet = EMAModel(ema_unet.parameters(), model_cls=UNetSpatioTemporalConditionModelMultiview, model_config=ema_unet.config)    
+
 
     if args.enable_xformers_memory_efficient_attention:
         if is_xformers_available():
@@ -850,7 +879,9 @@ def main():
                 model = models.pop()
                 
                 if i==1:
-                    load_model = UNetSpatioTemporalConditionModel.from_pretrained(input_dir, subfolder="unet")
+                    # load_model = UNetSpatioTemporalConditionModel.from_pretrained(input_dir, subfolder="unet")
+                    load_model = UNetSpatioTemporalConditionModelMultiview.from_pretrained(input_dir, subfolder="unet")
+
                     model.register_to_config(**load_model.config)
 
                     model.load_state_dict(load_model.state_dict())
@@ -922,6 +953,9 @@ def main():
                 video_length=args.nframes,
                 interval = args.interval,
                 img_size= (args.image_width, args.image_height),
+
+                multi_view=True,
+
             )
         else:
             assert False
@@ -940,6 +974,8 @@ def main():
         train_dataset,
         shuffle=True,
         batch_size=args.train_batch_size,
+        # batch_size=2,
+
         num_workers=args.dataloader_num_workers,
     )
 
@@ -1028,19 +1064,27 @@ def main():
     progress_bar = tqdm(range(global_step, args.max_train_steps), disable=not accelerator.is_local_main_process)
     progress_bar.set_description("Steps")
     nframes = args.nframes
+
+    # with torch.no_grad():
+
     for epoch in range(first_epoch, args.num_train_epochs):
         unet.train()
         train_loss = 0.0
 
         for step, batch in enumerate(train_dataloader):
+            
+            batch['pixel_values'] = batch['pixel_values'][:, :3]
+            batch['images'] = batch['images'][:3]
 
             # Skip steps until we reach the resumed step
             if args.resume_from_checkpoint and epoch == first_epoch and step < resume_step:
                 if step % args.gradient_accumulation_steps == 0:
                     progress_bar.update(1)
                 continue
-            
+                            
             with accelerator.accumulate(unet):
+
+                batch["pixel_values"] = batch["pixel_values"].reshape(-1, *batch["pixel_values"].shape[-4:])
 
                 # Convert images to latent space
                 latent_dist = vae.encode(batch["pixel_values"].reshape(-1, *batch["pixel_values"].shape[-3:]).to(weight_dtype)).latent_dist
@@ -1074,13 +1118,19 @@ def main():
                 noisy_latents = latents + torch.randn_like(latents) * sigma
 
                 # condition
-                first_frame_info = batch['images'][0][0]
+                # first_frame_info = batch['images'][0][0]
+                image_list = []
+                for cur_cam_img in batch['images']:
+                    first_frame_info = cur_cam_img[0][0]
 
-                # We normalize the image before resizing to match with the original implementation.
-                # Then we unnormalize it after resizing.
-                image = first_frame_info * 2.0 - 1.0
-                image = _resize_with_antialiasing(image, (224, 224))
-                image = (image + 1.0) / 2.0
+                    # We normalize the image before resizing to match with the original implementation.
+                    # Then we unnormalize it after resizing.
+                    image = first_frame_info * 2.0 - 1.0
+                    image = _resize_with_antialiasing(image, (224, 224))
+                    image = (image + 1.0) / 2.0
+                    image_list.append(image)
+
+                image = torch.cat(image_list, dim=1)                        
 
                 cond_transforms = torchvision.transforms.Compose(
                 [
@@ -1176,7 +1226,8 @@ def main():
 
                         save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
 
-                        unet_ckpt = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
+                        # unet_ckpt = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
+                        unet_ckpt = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
                         if args.use_ema:
                             ema_unet.copy_to(unet_ckpt.parameters())
 
@@ -1205,7 +1256,9 @@ def main():
     # Create the pipeline using the trained modules and save it.
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
-        unet = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
+        # unet = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
+        unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
+
         if args.use_ema:
             ema_unet.copy_to(unet.parameters())
 

@@ -272,6 +272,7 @@ class BasicTransformerBlock(nn.Module):
         attention_out_bias: bool = True,
     ):
         super().__init__()
+        self._args = {k: v for k, v in locals().items() if k != "self" and not k.startswith("_")}
         self.only_cross_attention = only_cross_attention
 
         # We keep these boolean flags for backward-compatibility.
@@ -602,6 +603,7 @@ class TemporalBasicTransformerBlock(nn.Module):
         cross_attention_dim: Optional[int] = None,
     ):
         super().__init__()
+        self._args = {k: v for k, v in locals().items() if k != "self" and not k.startswith("_")}
         self.is_res = dim == time_mix_inner_dim
 
         self.norm_in = nn.LayerNorm(dim)
