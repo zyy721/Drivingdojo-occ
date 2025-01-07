@@ -66,7 +66,7 @@ def main():
 
         all_cam_video_dict[sensor] = video_dict
 
-    with open('/home/yzhu/Drivingdojo/data/nusc_video_all_cam.pkl', 'wb') as f:
+    with open('../data/nusc_video_all_cam.pkl', 'wb') as f:
         pickle.dump(all_cam_video_dict, f)
 
 
