@@ -373,7 +373,7 @@
                 "--config_file", "examples/world_model/configs/fsdp.yaml", "--main_process_port", "12003", "examples/world_model/custom_train_video_svd_fsdp.py", 
                 // "--pretrained_model_name_or_path=../pretrain/stable-video-diffusion-img2vid-xt", 
                 "--pretrained_model_name_or_path=examples/world_model/demo_model/img2video_1024_14f", 
-                "--dataset_name=../data/nusc_video_all_cam.pkl", "--use_ema",
+                "--dataset_name=../data/sample_nusc_video_all_cam_train.pkl", "--use_ema",
                 "--train_batch_size", "1", "--gradient_accumulation_steps", "1", "--enable_xformers_memory_efficient_attention", "--max_train_steps=40000", "--learning_rate=5e-05", "--max_grad_norm=1",
                 "--lr_scheduler=constant", "--output_dir=work_dirs/nusc_fsdp_svd_front_576320_30f", "--dataloader_num_workers", "6", 
                 // "--nframes", "30", 

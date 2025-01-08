@@ -1142,7 +1142,8 @@ def main():
                 
                 # Normalize the image with for CLIP input
                 image = cond_transforms(image)
-                image_embeddings = image_encoder(image).image_embeds
+                # image_embeddings = image_encoder(image).image_embeds
+                image_embeddings = image_encoder(image.to(weight_dtype)).image_embeds
                 image_embeddings = image_embeddings.unsqueeze(1)
 
                 encoder_hidden_states = image_embeddings
