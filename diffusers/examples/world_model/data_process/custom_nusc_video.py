@@ -109,6 +109,8 @@ def main():
 
     all_cam_video_dict = {}
 
+    val = True
+
     # Iterate over selected sensors
     for sensor in args.sensors:
         video_dict = {}
@@ -145,6 +147,8 @@ def main():
                 data = nusc.get('sample_data', token)
                 if data['is_key_frame']:
                     path_scene_img = os.path.join(args.nusc_root, data['filename'])
+                    if val:
+                        path_scene_img = os.path.join('../../', path_scene_img)
                     scene_imgs.append(path_scene_img)
                 token = data["next"]
 

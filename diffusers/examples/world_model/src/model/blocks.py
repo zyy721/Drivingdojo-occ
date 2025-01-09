@@ -522,13 +522,26 @@ class TemporalBasicMultiviewTransformerBlock(TemporalBasicTransformerBlock):
             hidden_states = hidden_states + residual
 
         norm_hidden_states = self.norm1(hidden_states)
-        attn_output = self.attn1(norm_hidden_states, encoder_hidden_states=None)
+
+        # attn_output = self.attn1(norm_hidden_states, encoder_hidden_states=None)
+
+        half_batch_size = len(norm_hidden_states) // 2
+        first_half_attn_output = self.attn1(norm_hidden_states[:half_batch_size], encoder_hidden_states=None)
+        last_half_attn_output = self.attn1(norm_hidden_states[half_batch_size:], encoder_hidden_states=None)
+        attn_output = torch.cat((first_half_attn_output, last_half_attn_output), dim=0)
+
         hidden_states = attn_output + hidden_states
 
         # 3. Cross-Attention
         if self.attn2 is not None:
             norm_hidden_states = self.norm2(hidden_states)
-            attn_output = self.attn2(norm_hidden_states, encoder_hidden_states=encoder_hidden_states)
+            # attn_output = self.attn2(norm_hidden_states, encoder_hidden_states=encoder_hidden_states)
+
+            half_batch_size = len(norm_hidden_states) // 2
+            first_half_attn_output = self.attn2(norm_hidden_states[:half_batch_size], encoder_hidden_states=encoder_hidden_states[:half_batch_size])
+            last_half_attn_output = self.attn2(norm_hidden_states[half_batch_size:], encoder_hidden_states=encoder_hidden_states[half_batch_size:])
+            attn_output = torch.cat((first_half_attn_output, last_half_attn_output), dim=0)
+
             hidden_states = attn_output + hidden_states
 
         # multi-view cross attention

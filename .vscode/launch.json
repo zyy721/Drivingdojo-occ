@@ -334,7 +334,7 @@
             "name": "drivingdojo_inference",
             "type": "debugpy",
             "request": "launch",
-            "program": "./inference/img2video.py",
+            "program": "./inference/custom_img2video.py",
 
             
             "python": "/home/yzhu/anaconda3/envs/dojo/bin/python",
@@ -377,8 +377,8 @@
                 "--train_batch_size", "1", "--gradient_accumulation_steps", "1", "--enable_xformers_memory_efficient_attention", "--max_train_steps=40000", "--learning_rate=5e-05", "--max_grad_norm=1",
                 "--lr_scheduler=constant", "--output_dir=work_dirs/nusc_fsdp_svd_front_576320_30f", "--dataloader_num_workers", "6", 
                 // "--nframes", "30", 
-                "--nframes", "2", 
-                "--fps", "5",
+                "--nframes", "3", 
+                "--fps", "2",
                 "--image_height", "320", "--image_width", "576", "--conditioning_dropout_prob=0.2", "--seed_for_gen=42", "--ddim", "--checkpointing_steps",
                 "20000", "--tracker_project_name", "nusc_fsdp_svd_front", "--load_from_pkl", "--gradient_checkpointing", "--report_to", "wandb"
             ]

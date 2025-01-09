@@ -776,15 +776,15 @@ def main():
     unet_origin = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
     unet_param = {
         "trainable_state": "only_new",  # only_new or all
-        # "neighboring_view_pair": {0: [5, 1],
-        #                           1: [0, 2],
-        #                           2: [1, 3],
-        #                           3: [2, 4],
-        #                           4: [3, 5],
-        #                           5: [4, 0]},
-        "neighboring_view_pair": {0: [2, 1],
+        "neighboring_view_pair": {0: [5, 1],
                                   1: [0, 2],
-                                  2: [1, 0]},
+                                  2: [1, 3],
+                                  3: [2, 4],
+                                  4: [3, 5],
+                                  5: [4, 0]},
+        # "neighboring_view_pair": {0: [2, 1],
+        #                           1: [0, 2],
+        #                           2: [1, 0]},
         "neighboring_attn_type": "add",
         "zero_module_type": "zero_linear",
         "crossview_attn_type": 'basic',
@@ -1072,9 +1072,9 @@ def main():
         train_loss = 0.0
 
         for step, batch in enumerate(train_dataloader):
-            
-            batch['pixel_values'] = batch['pixel_values'][:, :3]
-            batch['images'] = batch['images'][:3]
+
+            # batch['pixel_values'] = batch['pixel_values'][:, :3]
+            # batch['images'] = batch['images'][:3]
 
             # Skip steps until we reach the resumed step
             if args.resume_from_checkpoint and epoch == first_epoch and step < resume_step:
