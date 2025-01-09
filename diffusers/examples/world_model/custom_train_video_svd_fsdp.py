@@ -788,7 +788,7 @@ def main():
         "neighboring_attn_type": "add",
         "zero_module_type": "zero_linear",
         "crossview_attn_type": 'basic',
-        "img_size": [224, 400]
+        "img_size": [320, 576]
     }
     unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
     
