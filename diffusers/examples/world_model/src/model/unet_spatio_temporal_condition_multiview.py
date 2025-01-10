@@ -109,7 +109,6 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
         transformer_layers_per_block: Union[int, Tuple[int], Tuple[Tuple]] = 1,
         num_attention_heads: Union[int, Tuple[int]] = (5, 10, 20, 20),
         num_frames: int = 25,
-
         # parameter added, we should keep all above (do not use kwargs)
         trainable_state="only_new",
         neighboring_view_pair: Optional[dict] = None,
@@ -118,7 +117,10 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
         crossview_attn_type: str = "basic",
         img_size: Optional[Tuple[int, int]] = None,
 
+        nframes_past: int = 10,
+
     ):
+        
         super().__init__(
             sample_size=sample_size, in_channels=in_channels,
             out_channels=out_channels,
@@ -132,6 +134,13 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
             transformer_layers_per_block=transformer_layers_per_block,
             num_attention_heads=num_attention_heads,
             num_frames=num_frames,)
+
+        self.custom_conv_in = nn.Conv2d(
+            4 * (nframes_past + 1),
+            block_out_channels[0],
+            kernel_size=3,
+            padding=1,
+        )
 
         self.crossview_attn_type = crossview_attn_type
         self.img_size = [int(s) for s in img_size] \
@@ -272,7 +281,8 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
         encoder_hidden_states = encoder_hidden_states.repeat_interleave(num_frames, dim=0)
 
         # 2. pre-process
-        sample = self.conv_in(sample)
+        # sample = self.conv_in(sample)
+        sample = self.custom_conv_in(sample)
 
         image_only_indicator = torch.zeros(batch_size, num_frames, dtype=sample.dtype, device=sample.device)
 

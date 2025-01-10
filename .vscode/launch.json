@@ -354,6 +354,29 @@
         },
 
         {
+            "name": "drivingdojo_inference_action",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./inference/custom_img2video_action.py",
+
+            
+            "python": "/home/yzhu/anaconda3/envs/dojo/bin/python",
+            "console": "integratedTerminal",
+            "cwd": "/home/yzhu/Drivingdojo/diffusers/examples/world_model",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+            },
+
+            // "args": [
+            //     "--project_name", "DriveDreamer2",
+            //     "--config_name", "custom_drivedreamer2_img_cond",
+            //     "--runners", "drivedreamer2.DriveDreamer2_Tester"
+            // ]
+        },
+
+        {
             "name": "drivingdojo_train",
             "type": "debugpy",
             "request": "launch",
@@ -370,14 +393,20 @@
             },
 
             "args": [
-                "--config_file", "examples/world_model/configs/fsdp.yaml", "--main_process_port", "12003", "examples/world_model/custom_train_video_svd_fsdp.py", 
+                // "--config_file", "examples/world_model/configs/fsdp.yaml", 
+                "--config_file", "examples/world_model/configs/4_gpus_deepspeed_zero2.yaml", 
+                "--main_process_port", "12003", 
+                // "examples/world_model/custom_train_video_svd_fsdp.py", 
+                "examples/world_model/custom_train_video_svd_deepspeed.py", 
                 // "--pretrained_model_name_or_path=../pretrain/stable-video-diffusion-img2vid-xt", 
                 "--pretrained_model_name_or_path=examples/world_model/demo_model/img2video_1024_14f", 
-                "--dataset_name=../data/sample_nusc_video_all_cam_train.pkl", "--use_ema",
+                "--dataset_name=../data/sample_nusc_video_all_cam_train.pkl", 
+                // "--use_ema",
                 "--train_batch_size", "1", "--gradient_accumulation_steps", "1", "--enable_xformers_memory_efficient_attention", "--max_train_steps=40000", "--learning_rate=5e-05", "--max_grad_norm=1",
                 "--lr_scheduler=constant", "--output_dir=work_dirs/nusc_fsdp_svd_front_576320_30f", "--dataloader_num_workers", "6", 
                 // "--nframes", "30", 
-                "--nframes", "3", 
+                "--nframes", "2", 
+                "--nframes_past", "2",
                 "--fps", "2",
                 "--image_height", "320", "--image_width", "576", "--conditioning_dropout_prob=0.2", "--seed_for_gen=42", "--ddim", "--checkpointing_steps",
                 "20000", "--tracker_project_name", "nusc_fsdp_svd_front", "--load_from_pkl", "--gradient_checkpointing", "--report_to", "wandb"

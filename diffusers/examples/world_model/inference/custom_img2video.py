@@ -8,6 +8,47 @@ from src.model.unet_spatio_temporal_condition_multiview import UNetSpatioTempora
 from utils.custom_video_datasets import VideoNuscenesDataset
 from torchvision import transforms
 from src.pipeline.pipeline_stable_video_diffusion_multiview import StableVideoDiffusionPipelineMultiview
+from PIL import Image
+import numpy as np
+
+
+def concat_images(images, direction='horizontal', pad=0, pad_value=0):
+    if len(images) == 1:
+        return images[0]
+    is_pil = isinstance(images[0], Image.Image)
+    if is_pil:
+        images = [np.array(image) for image in images]
+    if direction == 'horizontal':
+        height = max([image.shape[0] for image in images])
+        width = sum([image.shape[1] for image in images]) + pad * (len(images) - 1)
+        new_image = np.full((height, width, images[0].shape[2]), pad_value, dtype=images[0].dtype)
+        begin = 0
+        for image in images:
+            end = begin + image.shape[1]
+            new_image[: image.shape[0], begin:end] = image
+            begin = end + pad
+    elif direction == 'vertical':
+        height = sum([image.shape[0] for image in images]) + pad * (len(images) - 1)
+        width = max([image.shape[1] for image in images])
+        new_image = np.full((height, width, images[0].shape[2]), pad_value, dtype=images[0].dtype)
+        begin = 0
+        for image in images:
+            end = begin + image.shape[0]
+            new_image[begin:end, : image.shape[1]] = image
+            begin = end + pad
+    else:
+        assert False
+    if is_pil:
+        new_image = Image.fromarray(new_image)
+    return new_image
+
+# front, front_right, back_right, back, back_left, front_left
+
+origin_img_list = ['front', 'front_right', 'back_right', 'back', 'back_left', 'front_left']
+idx_permute_img = [5, 0, 1, 2, 3, 4]
+# permute_img_list = []
+# for idx in idx_permute_img:
+#     permute_img_list.append(origin_img_list[idx])
 
 # Setting
 # length = 14
@@ -28,7 +69,7 @@ pretrained_model_path = 'demo_model/img2video_1024_14f'
 model_path = '../../work_dirs/nusc_fsdp_svd_front_576320_30f/checkpoint-0'
 
 # initial image path
-img_path = 'demo_img/0010_CameraFpgaP0H120.jpg'
+# img_path = 'demo_img/0010_CameraFpgaP0H120.jpg'
 
 output_folder = './output'
 os.makedirs(output_folder,exist_ok=True)
@@ -82,14 +123,34 @@ val_dataloader = torch.utils.data.DataLoader(
 
 generator = torch.manual_seed(42)
 
+idx = 0
+
 for batch_dict in val_dataloader:
 
     batch_dict["pixel_values"] = batch_dict["pixel_values"].reshape(-1, *batch_dict["pixel_values"].shape[-4:])
 
     # frames = pipe(image, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0.01, fps = 5, generator=generator).frames[0]
-    frames = pipe(batch_dict, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0, fps = 2, generator=generator).frames[0]
+    frames = pipe(batch_dict, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0, fps = 2, generator=generator).frames
 
-    export_path = os.path.join(output_folder, 'test.gif')
+    # export_path = os.path.join(output_folder, 'test.gif')
 
-    # export to gif
-    imageio.mimsave(export_path, frames, format='GIF', duration=200, loop=0)
+    # # export to gif
+    # imageio.mimsave(export_path, frames, format='GIF', duration=200, loop=0)
+
+    all_multiview_imgs = []        
+    for idx_frame in range(length):
+        cur_multiview_imgs = []
+        for idx_cam in idx_permute_img:
+            cur_multiview_imgs.append(frames[idx_cam][idx_frame])
+        cur_row_first = concat_images(cur_multiview_imgs[:3], pad=0)
+        cur_row_last = concat_images(cur_multiview_imgs[3:], pad=0)
+        cat_cur_multiview_imgs = concat_images([cur_row_first, cur_row_last], direction='vertical')
+
+        all_multiview_imgs.append(cat_cur_multiview_imgs)
+
+        cat_cur_multiview_imgs.save('{:06d}_{}.jpg'.format(idx, idx_frame))
+
+    imageio.mimsave(os.path.join(output_folder, '{:06d}.mp4'.format(idx)), all_multiview_imgs, fps=2)
+    idx += 1
+
+
