@@ -8,7 +8,7 @@ WORK=nusc_deepspeed_svd_front_576320_30f
 EXP=nusc_deepspeed_svd_front
 
 
-accelerate launch --config_file examples/world_model/configs/fsdp.yaml --main_process_port 12000 examples/world_model/custom_train_video_svd_fsdp.py \
+accelerate launch --config_file examples/world_model/configs/2_gpus_deepspeed_zero3.yaml --main_process_port 12000 examples/world_model/custom_train_video_svd_deepspeed.py \
   --pretrained_model_name_or_path=$MODEL_NAME \
   --dataset_name=$DATASET_NAME \
   --train_batch_size 1 \

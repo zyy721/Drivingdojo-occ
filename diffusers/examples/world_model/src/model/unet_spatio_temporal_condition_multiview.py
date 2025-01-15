@@ -27,6 +27,9 @@ from .blocks import (
     BasicMultiviewTransformerBlock, TemporalBasicMultiviewTransformerBlock
 )
 
+from diffusers.models.embeddings import TimestepEmbedding, Timesteps
+
+
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
@@ -117,7 +120,7 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
         crossview_attn_type: str = "basic",
         img_size: Optional[Tuple[int, int]] = None,
 
-        nframes_past: int = 10,
+        # nframes_past: int = 10,
 
     ):
         
@@ -135,12 +138,16 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
             num_attention_heads=num_attention_heads,
             num_frames=num_frames,)
 
-        self.custom_conv_in = nn.Conv2d(
-            4 * (nframes_past + 1),
-            block_out_channels[0],
-            kernel_size=3,
-            padding=1,
-        )
+        # self.custom_conv_in = nn.Conv2d(
+        #     4 * (nframes_past + 1),
+        #     block_out_channels[0],
+        #     kernel_size=3,
+        #     padding=1,
+        # )
+
+        time_embed_dim = block_out_channels[0] * 4
+        timestep_input_dim = block_out_channels[0]
+        self.cond_time_stack_embedding = TimestepEmbedding(timestep_input_dim, time_embed_dim)
 
         self.crossview_attn_type = crossview_attn_type
         self.img_size = [int(s) for s in img_size] \
@@ -196,9 +203,16 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
             **kwargs,
         )
 
+        unet_state_dict = unet.state_dict()
+        for k in list(unet_state_dict.keys()):
+            if "time_embed" in k:  # duplicate a new timestep embedding from the pretrained weights
+                unet_state_dict[k.replace("time_embedding", "cond_time_stack_embedding")] = unet_state_dict[k]
+
         if load_weights_from_unet:
+            # missing_keys, unexpected_keys = unet_spatio_temporal_condition_multiview.load_state_dict(
+            #     unet.state_dict(), strict=False)
             missing_keys, unexpected_keys = unet_spatio_temporal_condition_multiview.load_state_dict(
-                unet.state_dict(), strict=False)
+                unet_state_dict, strict=False)
             # logging.info(
             #     f"[UNetSpatioTemporalConditionModelMultiview] load pretrained with "
             #     f"missing_keys: {missing_keys}; "
@@ -214,6 +228,9 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
         self,
         sample: torch.Tensor,
         timestep: Union[torch.Tensor, float, int],
+
+        cond_mask: Optional[torch.Tensor],
+
         encoder_hidden_states: torch.Tensor,
         added_time_ids: torch.Tensor,
         return_dict: bool = True,
@@ -263,12 +280,19 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
         # there might be better ways to encapsulate this.
         t_emb = t_emb.to(dtype=sample.dtype)
 
-        emb = self.time_embedding(t_emb)
+        # emb = self.time_embedding(t_emb)
+
+        t_emb = t_emb.repeat_interleave(num_frames, dim=0)
+        cond_mask_ = cond_mask.reshape(-1, 1)
+        emb = self.cond_time_stack_embedding(t_emb) * cond_mask_ + self.time_embedding(t_emb) * (1 - cond_mask_)
 
         time_embeds = self.add_time_proj(added_time_ids.flatten())
         time_embeds = time_embeds.reshape((batch_size, -1))
         time_embeds = time_embeds.to(emb.dtype)
         aug_emb = self.add_embedding(time_embeds)
+
+        aug_emb = aug_emb.repeat_interleave(num_frames, dim=0)
+
         emb = emb + aug_emb
 
         # Flatten the batch and frames dimensions
@@ -276,13 +300,13 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
         sample = sample.flatten(0, 1)
         # Repeat the embeddings num_video_frames times
         # emb: [batch, channels] -> [batch * frames, channels]
-        emb = emb.repeat_interleave(num_frames, dim=0)
+        # emb = emb.repeat_interleave(num_frames, dim=0)
         # encoder_hidden_states: [batch, 1, channels] -> [batch * frames, 1, channels]
         encoder_hidden_states = encoder_hidden_states.repeat_interleave(num_frames, dim=0)
 
         # 2. pre-process
-        # sample = self.conv_in(sample)
-        sample = self.custom_conv_in(sample)
+        sample = self.conv_in(sample)
+        # sample = self.custom_conv_in(sample)
 
         image_only_indicator = torch.zeros(batch_size, num_frames, dtype=sample.dtype, device=sample.device)
 

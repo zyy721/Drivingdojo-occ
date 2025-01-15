@@ -72,6 +72,20 @@ if is_wandb_available():
 
 from src.model.unet_spatio_temporal_condition_multiview import UNetSpatioTemporalConditionModelMultiview
 
+# from transformers.integrations import PeftAdapterMixin, deepspeed_config, is_deepspeed_zero3_enabled
+
+from transformers.integrations.deepspeed import (
+    is_deepspeed_zero3_enabled,
+    set_hf_deepspeed_config,
+    unset_hf_deepspeed_config,
+)
+
+import contextlib
+
+from accelerate.utils.deepspeed import HfDeepSpeedConfig
+
+from accelerate.utils.dataclasses import DeepSpeedPlugin
+
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 
@@ -765,10 +779,22 @@ def main():
         returns either a context list that includes one that will disable zero.Init or an empty context list
         """
         deepspeed_plugin = AcceleratorState().deepspeed_plugin if accelerate.state.is_initialized() else None
+
         if deepspeed_plugin is None:
             return []
 
         return [deepspeed_plugin.zero3_init_context_manager(enable=False)]
+
+    @contextlib.contextmanager
+    def temporarily_disable_deepspeed_zero3():
+        if is_deepspeed_zero3_enabled():
+            deepspeed_plugin = AcceleratorState().deepspeed_plugin
+            unset_hf_deepspeed_config()
+            yield
+            set_hf_deepspeed_config(deepspeed_plugin.hf_ds_config)
+        else:
+            yield
+
 
     # Currently Accelerate doesn't know how to handle multiple models under Deepspeed ZeRO stage 3.
     # For this to work properly all models must be run through `accelerate.prepare`. But accelerate
@@ -800,7 +826,7 @@ def main():
         "crossview_attn_type": 'basic',
         "img_size": [320, 576],
 
-        "nframes_past": nframes_past,
+        # "nframes_past": nframes_past,
 
     }
     # unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
@@ -809,7 +835,16 @@ def main():
     # tokenizer = CLIPTokenizer.from_pretrained(
     #     args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
     # )
-    with ContextManagers(deepspeed_zero_init_disabled_context_manager()):
+    # with ContextManagers(deepspeed_zero_init_disabled_context_manager()):
+    #     feature_extractor = CLIPImageProcessor.from_pretrained(args.pretrained_model_name_or_path, subfolder="feature_extractor", revision=args.revision)
+    #     image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+    #         args.pretrained_model_name_or_path, subfolder="image_encoder", revision=args.revision
+    #     )
+    #     vae = AutoencoderKLTemporalDecoder.from_pretrained(
+    #         args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision
+    #     )
+
+    with temporarily_disable_deepspeed_zero3():
         feature_extractor = CLIPImageProcessor.from_pretrained(args.pretrained_model_name_or_path, subfolder="feature_extractor", revision=args.revision)
         image_encoder = CLIPVisionModelWithProjection.from_pretrained(
             args.pretrained_model_name_or_path, subfolder="image_encoder", revision=args.revision
@@ -817,6 +852,7 @@ def main():
         vae = AutoencoderKLTemporalDecoder.from_pretrained(
             args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision
         )
+
     # Freeze 
     vae.requires_grad_(False)
     image_encoder.requires_grad_(False)
@@ -1087,15 +1123,41 @@ def main():
 
         for step, batch in enumerate(train_dataloader):
 
-            # batch['pixel_values'] = batch['pixel_values'][:, :3]
-            # batch['images'] = batch['images'][:3]
+            batch['pixel_values'] = batch['pixel_values'][:, :3]
+            batch['images'] = batch['images'][:3]
 
             # Skip steps until we reach the resumed step
             if args.resume_from_checkpoint and epoch == first_epoch and step < resume_step:
                 if step % args.gradient_accumulation_steps == 0:
                     progress_bar.update(1)
                 continue
-                            
+
+
+            if accelerator.is_main_process:
+
+                save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
+
+                # accelerator.save_state(save_path)
+
+                success = unet.save_checkpoint(save_path)
+
+                # state_dict = accelerator.get_state_dict(unet)
+
+                # # unet_ckpt = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
+                # # unet_ckpt = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
+                # unet_ckpt = accelerator.unwrap_model(unet)
+                # if args.use_ema:
+                #     ema_unet.copy_to(unet_ckpt.parameters())
+
+                # pipeline = StableVideoDiffusionPipeline(
+                #     image_encoder=image_encoder,
+                #     vae=vae,
+                #     unet=unet_ckpt,
+                #     scheduler=noise_scheduler,
+                #     feature_extractor=feature_extractor,
+                # )
+                # pipeline.save_pretrained(save_path)
+
             with accelerator.accumulate(unet):
 
                 batch["pixel_values"] = batch["pixel_values"].reshape(-1, *batch["pixel_values"].shape[-4:])
@@ -1118,24 +1180,35 @@ def main():
                 # first_frame_latent = vae.encode(first_frame_image.to(weight_dtype)).latent_dist.mode()* vae.config.scaling_factor   
                 # first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
 
-                first_frame_image = batch["pixel_values"][:, :nframes_past]
-                first_frame_image = first_frame_image.reshape(-1, *first_frame_image.shape[-3:])
+                # first_frame_image = batch["pixel_values"][:, :nframes_past]
+                # first_frame_image = first_frame_image.reshape(-1, *first_frame_image.shape[-3:])
+                # first_frame_image = first_frame_image + noise_aug_strength * torch.randn_like(first_frame_image)
+                # first_frame_latent = vae.encode(first_frame_image.to(weight_dtype)).latent_dist.mode()* vae.config.scaling_factor   
+                # first_frame_latent = first_frame_latent.reshape(bsz, nframes_past, *first_frame_latent.shape[-3:])
+                # first_frame_latent = first_frame_latent.reshape(bsz, -1, *first_frame_latent.shape[-2:])
+                # first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
+
+                first_frame_image = batch["pixel_values"][:, nframes_past-1]
                 first_frame_image = first_frame_image + noise_aug_strength * torch.randn_like(first_frame_image)
                 first_frame_latent = vae.encode(first_frame_image.to(weight_dtype)).latent_dist.mode()* vae.config.scaling_factor   
-                first_frame_latent = first_frame_latent.reshape(bsz, nframes_past, *first_frame_latent.shape[-3:])
-                first_frame_latent = first_frame_latent.reshape(bsz, -1, *first_frame_latent.shape[-2:])
                 first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
 
                 # Add noise to the latents according to the noise magnitude at each timestep, keep same to EDM formulation
                 P_std = args.p_std
                 P_mean = args.p_mean
                 rnd_normal = torch.randn([bsz, 1, 1, 1, 1], device=latents.device)
+
                 sigma = (rnd_normal * P_std + P_mean).exp()
                 c_skip = 1 / (sigma**2 + 1)
                 c_out =  -sigma / (sigma**2 + 1) ** 0.5
                 c_in = 1 / (sigma**2 + 1) ** 0.5
                 c_noise = (sigma.log() / 4).reshape([bsz])
                 loss_weight = (sigma ** 2 + 1) / sigma ** 2
+
+                sigma = sigma.repeat_interleave(batch["pixel_values"].shape[1], dim=1)
+                cond_mask = torch.zeros_like(sigma)
+                cond_mask[:, :nframes_past] = 1
+                sigma = (1 - cond_mask) * sigma
 
                 noisy_latents = latents + torch.randn_like(latents) * sigma
 
@@ -1209,9 +1282,12 @@ def main():
                 add_time_ids = [fps, motion_bucket_id, noise_aug_strength]
                 add_time_ids = torch.tensor(add_time_ids, device=latents.device).unsqueeze(0).expand(bsz, -1)
                 # Predict the noise residual and compute loss
-                model_pred = unet(input_latents, c_noise, encoder_hidden_states=encoder_hidden_states, added_time_ids=add_time_ids).sample
+                # model_pred = unet(input_latents, c_noise, encoder_hidden_states=encoder_hidden_states, added_time_ids=add_time_ids).sample
+                model_pred = unet(input_latents, c_noise, cond_mask, encoder_hidden_states=encoder_hidden_states, added_time_ids=add_time_ids).sample
 
                 pred_final = c_out*model_pred + c_skip * noisy_latents 
+
+                pred_final = pred_final * (1 - cond_mask) + latents * cond_mask
 
                 # Compute the loss
                 loss = ((pred_final - latents)**2 * loss_weight).mean()
