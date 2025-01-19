@@ -359,11 +359,6 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
         return_dict: bool = True,
-
-        cond_mask: Optional[torch.Tensor] = None,
-        nframes_past: int = 10,
-        cond_frame: Optional[torch.Tensor] = None,
-
     ):
         r"""
         The call function to the pipeline for generation.
@@ -477,7 +472,7 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
         # noise = randn_tensor(image.shape, generator=generator, device=device, dtype=image.dtype)
         # image = image + noise_aug_strength * noise
 
-        image = input_dict["pixel_values"][:, nframes_past-1].to(device)
+        image = input_dict["pixel_values"][:, 0].to(device)
         noise = randn_tensor(image.shape, generator=generator, device=device, dtype=image.dtype)
         image = image + noise_aug_strength * noise
 
@@ -543,9 +538,6 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
         self._num_timesteps = len(timesteps)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
-                latents = latents * (1 - cond_mask) + cond_frame * cond_mask
-                cond_mask_input = torch.cat([cond_mask] * 2) if self.do_classifier_free_guidance else cond_mask
-
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
@@ -557,9 +549,6 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
                 noise_pred = self.unet(
                     latent_model_input,
                     t,
-
-                    cond_mask_input,
-
                     encoder_hidden_states=image_embeddings,
                     added_time_ids=added_time_ids,
                     return_dict=False,
@@ -583,8 +572,6 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
 
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
                     progress_bar.update()
-
-        latents = latents * (1 - cond_mask) + cond_frame * cond_mask
 
         if not output_type == "latent":
             # cast back to fp16 if needed

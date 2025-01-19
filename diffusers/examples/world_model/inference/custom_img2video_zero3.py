@@ -10,6 +10,7 @@ from torchvision import transforms
 from src.pipeline.pipeline_stable_video_diffusion_multiview import StableVideoDiffusionPipelineMultiview
 from PIL import Image
 import numpy as np
+from diffusers.models import UNetSpatioTemporalConditionModel, AutoencoderKLTemporalDecoder
 
 
 def concat_images(images, direction='horizontal', pad=0, pad_value=0):
@@ -57,13 +58,12 @@ idx_permute_img = [5, 0, 1, 2, 3, 4]
 
 dataset_name = '../../../data/sample_nusc_video_all_cam_val.pkl'
 
-length = 2
+length = 3
 w = 576
 h = 320
 interval = 1
 val_batch_size = 1
 dataloader_num_workers = 2
-nframes_past = 1
 
 # model path
 pretrained_model_path = 'demo_model/img2video_1024_14f'
@@ -81,8 +81,40 @@ os.makedirs(output_folder,exist_ok=True)
 # )
 
 pipe_param = {}
-unet_path = os.path.join(model_path, 'unet')
-unet = UNetSpatioTemporalConditionModelMultiview.from_pretrained(unet_path, torch_dtype=torch.float16)
+# unet_path = os.path.join(model_path, 'unet')
+# unet = UNetSpatioTemporalConditionModelMultiview.from_pretrained(unet_path, torch_dtype=torch.float16)
+
+unet_origin = UNetSpatioTemporalConditionModel.from_pretrained(pretrained_model_path, subfolder="unet")
+unet_param = {
+    "trainable_state": "only_new",  # only_new or all
+    "neighboring_view_pair": {0: [5, 1],
+                              1: [0, 2],
+                              2: [1, 3],
+                              3: [2, 4],
+                              4: [3, 5],
+                              5: [4, 0]},
+    # "neighboring_view_pair": {0: [2, 1],
+    #                             1: [0, 2],
+    #                             2: [1, 0]},
+    "neighboring_attn_type": "add",
+    "zero_module_type": "zero_linear",
+    "crossview_attn_type": 'basic',
+    "img_size": [320, 576],
+
+    # "nframes_past": nframes_past,
+
+}
+unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
+
+# state_dict = torch.load(f'{model_path}/pytorch_model.bin', map_location="cpu")
+# unet.load_state_dict(state_dict, strict=True)
+# del state_dict
+
+from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+state_dict = get_fp32_state_dict_from_zero_checkpoint(model_path)
+unet.load_state_dict(state_dict, strict=True)
+del state_dict
+
 unet.eval()
 pipe_param['unet'] = unet
 
@@ -127,23 +159,12 @@ generator = torch.manual_seed(42)
 
 idx = 0
 
-device = pipe._execution_device
-
 for batch_dict in val_dataloader:
 
     batch_dict["pixel_values"] = batch_dict["pixel_values"].reshape(-1, *batch_dict["pixel_values"].shape[-4:])
-    
-    cond_frame_pixel_values = batch_dict["pixel_values"].to(torch.float16).reshape(-1, *batch_dict["pixel_values"].shape[-3:])
-    cond_frame_dist = pipe.vae.encode(cond_frame_pixel_values.to(device)).latent_dist
-    cond_frame = cond_frame_dist.sample()
-    cond_frame = cond_frame.reshape(-1, length, *cond_frame.shape[-3:])
-
-    initial_cond_mask = torch.zeros(cond_frame.shape[0], length, 1, 1, 1).to(torch.float16).to(device)
-    initial_cond_mask[:, :nframes_past] = 1
 
     # frames = pipe(image, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0.01, fps = 5, generator=generator).frames[0]
-    # frames = pipe(batch_dict, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0, fps = 2, generator=generator).frames
-    frames = pipe(batch_dict, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0, fps = 2, generator=generator, cond_mask=initial_cond_mask, nframes_past=nframes_past, cond_frame=cond_frame).frames
+    frames = pipe(batch_dict, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0, fps = 2, generator=generator).frames
 
     # export_path = os.path.join(output_folder, 'test.gif')
 

@@ -24,6 +24,7 @@ import random
 
 import accelerate
 import datasets
+import deepspeed.comm
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -74,7 +75,13 @@ from src.model.unet_spatio_temporal_condition_multiview import UNetSpatioTempora
 
 # from transformers.integrations import PeftAdapterMixin, deepspeed_config, is_deepspeed_zero3_enabled
 
-from transformers.integrations.deepspeed import (
+# from transformers.integrations.deepspeed import (
+#     is_deepspeed_zero3_enabled,
+#     set_hf_deepspeed_config,
+#     unset_hf_deepspeed_config,
+# )
+
+from transformers.deepspeed import (
     is_deepspeed_zero3_enabled,
     set_hf_deepspeed_config,
     unset_hf_deepspeed_config,
@@ -87,6 +94,8 @@ from accelerate.utils.deepspeed import HfDeepSpeedConfig
 from accelerate.utils.dataclasses import DeepSpeedPlugin
 
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
+import deepspeed
 
 
 logger = get_logger(__name__, log_level="INFO")
@@ -812,15 +821,15 @@ def main():
     unet_origin = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
     unet_param = {
         "trainable_state": "only_new",  # only_new or all
-        # "neighboring_view_pair": {0: [5, 1],
-        #                           1: [0, 2],
-        #                           2: [1, 3],
-        #                           3: [2, 4],
-        #                           4: [3, 5],
-        #                           5: [4, 0]},
-        "neighboring_view_pair": {0: [2, 1],
+        "neighboring_view_pair": {0: [5, 1],
                                   1: [0, 2],
-                                  2: [1, 0]},
+                                  2: [1, 3],
+                                  3: [2, 4],
+                                  4: [3, 5],
+                                  5: [4, 0]},
+        # "neighboring_view_pair": {0: [2, 1],
+        #                           1: [0, 2],
+        #                           2: [1, 0]},
         "neighboring_attn_type": "add",
         "zero_module_type": "zero_linear",
         "crossview_attn_type": 'basic',
@@ -1123,40 +1132,27 @@ def main():
 
         for step, batch in enumerate(train_dataloader):
 
-            batch['pixel_values'] = batch['pixel_values'][:, :3]
-            batch['images'] = batch['images'][:3]
+            save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
+            unet_ckpt = accelerator.unwrap_model(unet)
+            with deepspeed.zero.GatheredParameters(unet_ckpt.parameters(), modifier_rank=0):
+                if deepspeed.comm.get_rank() == 0:
+                    pipeline = StableVideoDiffusionPipeline(
+                        image_encoder=image_encoder,
+                        vae=vae,
+                        unet=unet_ckpt,
+                        scheduler=noise_scheduler,
+                        feature_extractor=feature_extractor,
+                    )
+                    pipeline.save_pretrained(save_path)
+
+            # batch['pixel_values'] = batch['pixel_values'][:, :3]
+            # batch['images'] = batch['images'][:3]
 
             # Skip steps until we reach the resumed step
             if args.resume_from_checkpoint and epoch == first_epoch and step < resume_step:
                 if step % args.gradient_accumulation_steps == 0:
                     progress_bar.update(1)
                 continue
-
-
-            if accelerator.is_main_process:
-
-                save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
-
-                # accelerator.save_state(save_path)
-
-                success = unet.save_checkpoint(save_path)
-
-                # state_dict = accelerator.get_state_dict(unet)
-
-                # # unet_ckpt = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
-                # # unet_ckpt = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
-                # unet_ckpt = accelerator.unwrap_model(unet)
-                # if args.use_ema:
-                #     ema_unet.copy_to(unet_ckpt.parameters())
-
-                # pipeline = StableVideoDiffusionPipeline(
-                #     image_encoder=image_encoder,
-                #     vae=vae,
-                #     unet=unet_ckpt,
-                #     scheduler=noise_scheduler,
-                #     feature_extractor=feature_extractor,
-                # )
-                # pipeline.save_pretrained(save_path)
 
             with accelerator.accumulate(unet):
 
@@ -1308,6 +1304,10 @@ def main():
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
+                unet_ckpt = accelerator.unwrap_model(unet)
+                with deepspeed.zero.GatheredParameters(unet_ckpt.parameters()):
+                    print()
+
                 if args.use_ema:
                     from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
                     with FSDP.summon_full_params(unet):
@@ -1343,18 +1343,20 @@ def main():
 
                         # unet_ckpt = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
                         # unet_ckpt = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
-                        unet_ckpt = accelerator.unwrap_model(unet)
-                        if args.use_ema:
-                            ema_unet.copy_to(unet_ckpt.parameters())
+                        # unet_ckpt = accelerator.unwrap_model(unet)
+                        # if args.use_ema:
+                        #     ema_unet.copy_to(unet_ckpt.parameters())
 
-                        pipeline = StableVideoDiffusionPipeline(
-                            image_encoder=image_encoder,
-                            vae=vae,
-                            unet=unet_ckpt,
-                            scheduler=noise_scheduler,
-                            feature_extractor=feature_extractor,
-                        )
-                        pipeline.save_pretrained(save_path)
+                        # pipeline = StableVideoDiffusionPipeline(
+                        #     image_encoder=image_encoder,
+                        #     vae=vae,
+                        #     unet=unet_ckpt,
+                        #     scheduler=noise_scheduler,
+                        #     feature_extractor=feature_extractor,
+                        # )
+                        # pipeline.save_pretrained(save_path)
+
+                        success = unet.save_checkpoint(save_path)
 
                         logger.info(f"Saved state to {save_path}")
 

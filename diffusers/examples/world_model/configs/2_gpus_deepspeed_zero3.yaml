@@ -13,6 +13,7 @@ deepspeed_config:
   zero_stage: 3
 
   zero3_save_16bit_model: true
+  # zero3_save_16bit_model: false
 
 distributed_type: DEEPSPEED
 downcast_bf16: 'no'

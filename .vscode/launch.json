@@ -354,6 +354,29 @@
         },
 
         {
+            "name": "drivingdojo_inference_zero3",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./inference/custom_img2video_zero3.py",
+
+            
+            "python": "/home/yzhu/anaconda3/envs/dojo/bin/python",
+            "console": "integratedTerminal",
+            "cwd": "/home/yzhu/Drivingdojo/diffusers/examples/world_model",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+            },
+
+            // "args": [
+            //     "--project_name", "DriveDreamer2",
+            //     "--config_name", "custom_drivedreamer2_img_cond",
+            //     "--runners", "drivedreamer2.DriveDreamer2_Tester"
+            // ]
+        },
+
+        {
             "name": "drivingdojo_inference_action",
             "type": "debugpy",
             "request": "launch",
