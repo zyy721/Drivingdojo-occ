@@ -136,6 +136,7 @@ for batch_dict in val_dataloader:
     cond_frame_pixel_values = batch_dict["pixel_values"].to(torch.float16).reshape(-1, *batch_dict["pixel_values"].shape[-3:])
     cond_frame_dist = pipe.vae.encode(cond_frame_pixel_values.to(device)).latent_dist
     cond_frame = cond_frame_dist.sample()
+    cond_frame = cond_frame * pipe.vae.config.scaling_factor
     cond_frame = cond_frame.reshape(-1, length, *cond_frame.shape[-3:])
 
     initial_cond_mask = torch.zeros(cond_frame.shape[0], length, 1, 1, 1).to(torch.float16).to(device)

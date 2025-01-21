@@ -1132,18 +1132,18 @@ def main():
 
         for step, batch in enumerate(train_dataloader):
 
-            save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
-            unet_ckpt = accelerator.unwrap_model(unet)
-            with deepspeed.zero.GatheredParameters(unet_ckpt.parameters(), modifier_rank=0):
-                if deepspeed.comm.get_rank() == 0:
-                    pipeline = StableVideoDiffusionPipeline(
-                        image_encoder=image_encoder,
-                        vae=vae,
-                        unet=unet_ckpt,
-                        scheduler=noise_scheduler,
-                        feature_extractor=feature_extractor,
-                    )
-                    pipeline.save_pretrained(save_path)
+            # save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
+            # unet_ckpt = accelerator.unwrap_model(unet)
+            # with deepspeed.zero.GatheredParameters(unet_ckpt.parameters(), modifier_rank=0):
+            #     if deepspeed.comm.get_rank() == 0:
+            #         pipeline = StableVideoDiffusionPipeline(
+            #             image_encoder=image_encoder,
+            #             vae=vae,
+            #             unet=unet_ckpt,
+            #             scheduler=noise_scheduler,
+            #             feature_extractor=feature_extractor,
+            #         )
+            #         pipeline.save_pretrained(save_path)
 
             # batch['pixel_values'] = batch['pixel_values'][:, :3]
             # batch['images'] = batch['images'][:3]
@@ -1304,9 +1304,6 @@ def main():
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
-                unet_ckpt = accelerator.unwrap_model(unet)
-                with deepspeed.zero.GatheredParameters(unet_ckpt.parameters()):
-                    print()
 
                 if args.use_ema:
                     from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -1340,25 +1337,19 @@ def main():
                                     shutil.rmtree(removing_checkpoint)
 
                         save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
+                        unet_ckpt = accelerator.unwrap_model(unet)
+                        with deepspeed.zero.GatheredParameters(unet_ckpt.parameters(), modifier_rank=0):
+                            if deepspeed.comm.get_rank() == 0:
+                                pipeline = StableVideoDiffusionPipeline(
+                                    image_encoder=image_encoder,
+                                    vae=vae,
+                                    unet=unet_ckpt,
+                                    scheduler=noise_scheduler,
+                                    feature_extractor=feature_extractor,
+                                )
+                                pipeline.save_pretrained(save_path)
 
-                        # unet_ckpt = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
-                        # unet_ckpt = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
-                        # unet_ckpt = accelerator.unwrap_model(unet)
-                        # if args.use_ema:
-                        #     ema_unet.copy_to(unet_ckpt.parameters())
-
-                        # pipeline = StableVideoDiffusionPipeline(
-                        #     image_encoder=image_encoder,
-                        #     vae=vae,
-                        #     unet=unet_ckpt,
-                        #     scheduler=noise_scheduler,
-                        #     feature_extractor=feature_extractor,
-                        # )
-                        # pipeline.save_pretrained(save_path)
-
-                        success = unet.save_checkpoint(save_path)
-
-                        logger.info(f"Saved state to {save_path}")
+                                logger.info(f"Saved state to {save_path}")
 
             logs = {"step_loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
             progress_bar.set_postfix(**logs)
@@ -1373,22 +1364,35 @@ def main():
 
     # Create the pipeline using the trained modules and save it.
     accelerator.wait_for_everyone()
+
+    unet_ckpt = accelerator.unwrap_model(unet)
+    with deepspeed.zero.GatheredParameters(unet_ckpt.parameters(), modifier_rank=0):
+        if deepspeed.comm.get_rank() == 0:
+            pipeline = StableVideoDiffusionPipeline(
+                image_encoder=image_encoder,
+                vae=vae,
+                unet=unet_ckpt,
+                scheduler=noise_scheduler,
+                feature_extractor=feature_extractor,
+            )
+            pipeline.save_pretrained(args.output_dir)
+
     if accelerator.is_main_process:
         # unet = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
         # unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
-        unet_ckpt = accelerator.unwrap_model(unet)
+        # unet_ckpt = accelerator.unwrap_model(unet)
 
-        if args.use_ema:
-            ema_unet.copy_to(unet.parameters())
+        # if args.use_ema:
+        #     ema_unet.copy_to(unet.parameters())
 
-        pipeline = StableVideoDiffusionPipeline(
-            image_encoder=image_encoder,
-            vae=vae,
-            unet=unet,
-            scheduler=noise_scheduler,
-            feature_extractor=feature_extractor,
-        )
-        pipeline.save_pretrained(args.output_dir)
+        # pipeline = StableVideoDiffusionPipeline(
+        #     image_encoder=image_encoder,
+        #     vae=vae,
+        #     unet=unet,
+        #     scheduler=noise_scheduler,
+        #     feature_extractor=feature_extractor,
+        # )
+        # pipeline.save_pretrained(args.output_dir)
 
         # Run a final round of inference.
         images = []
