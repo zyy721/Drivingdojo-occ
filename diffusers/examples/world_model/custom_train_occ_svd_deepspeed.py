@@ -71,7 +71,8 @@ from diffusers.utils.torch_utils import randn_tensor
 if is_wandb_available():
     import wandb
 
-from src.model.unet_spatio_temporal_condition_multiview import UNetSpatioTemporalConditionModelMultiview
+# from src.model.unet_spatio_temporal_condition_multiview import UNetSpatioTemporalConditionModelMultiview
+from src.model.unet_spatio_temporal_condition_occ import UNetSpatioTemporalConditionModelOcc
 
 # from transformers.integrations import PeftAdapterMixin, deepspeed_config, is_deepspeed_zero3_enabled
 
@@ -96,6 +97,10 @@ from accelerate.utils.dataclasses import DeepSpeedPlugin
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 import deepspeed
+
+# import mmcv
+from mmengine import Config
+from mmengine.registry import MODELS
 
 
 logger = get_logger(__name__, log_level="INFO")
@@ -839,7 +844,7 @@ def main():
 
     }
     # unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
-    unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
+    unet = UNetSpatioTemporalConditionModelOcc.from_unet_spatio_temporal_condition(unet_origin, False, **unet_param)
 
     # tokenizer = CLIPTokenizer.from_pretrained(
     #     args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
@@ -853,6 +858,11 @@ def main():
     #         args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision
     #     )
 
+    # load config
+    cfg = Config.fromfile('examples/world_model/utils/OccWorld/config/custom_train_occworld.py')
+    import utils.OccWorld.model
+    from utils.OccWorld.dataset import get_dataloader, get_nuScenes_label_name
+
     with temporarily_disable_deepspeed_zero3():
         feature_extractor = CLIPImageProcessor.from_pretrained(args.pretrained_model_name_or_path, subfolder="feature_extractor", revision=args.revision)
         image_encoder = CLIPVisionModelWithProjection.from_pretrained(
@@ -862,10 +872,22 @@ def main():
             args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision
         )
 
+        occ_vae = MODELS.build(cfg.model)
+        occ_vae.init_weights()
+        ckpt_occ_vae = torch.load(cfg.load_from, map_location='cpu')
+        if 'state_dict' in ckpt_occ_vae:
+            state_dict = ckpt_occ_vae['state_dict']
+        else:
+            state_dict = ckpt_occ_vae
+        occ_vae.load_state_dict(state_dict, strict=True)
+
     # Freeze 
     vae.requires_grad_(False)
     image_encoder.requires_grad_(False)
-    
+
+    occ_vae.eval()
+    occ_vae.requires_grad_(False)
+
     # Create EMA for the unet.
     if args.use_ema:
         # ema_unet = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision)
@@ -1029,14 +1051,22 @@ def main():
         return inputs.input_ids
     
     # DataLoaders creation:
-    train_dataloader = torch.utils.data.DataLoader(
-        train_dataset,
-        shuffle=True,
-        batch_size=args.train_batch_size,
-        # batch_size=2,
+    # train_dataloader = torch.utils.data.DataLoader(
+    #     train_dataset,
+    #     shuffle=True,
+    #     batch_size=args.train_batch_size,
+    #     # batch_size=2,
 
-        num_workers=args.dataloader_num_workers,
-    )
+    #     num_workers=args.dataloader_num_workers,
+    # )
+
+    train_dataloader, val_dataloader = get_dataloader(
+        cfg.train_dataset_config,
+        cfg.val_dataset_config,
+        cfg.train_wrapper_config,
+        cfg.val_wrapper_config,
+        cfg.train_loader,
+        cfg.val_loader)
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
@@ -1073,6 +1103,8 @@ def main():
     # Move the text encoder to gpu and cast to weight_dtype
     image_encoder.to(accelerator.device, dtype=weight_dtype)
     vae.to(accelerator.device, dtype=weight_dtype)
+
+    occ_vae.to(accelerator.device, dtype=weight_dtype)
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
@@ -1156,13 +1188,25 @@ def main():
 
             with accelerator.accumulate(unet):
 
-                batch["pixel_values"] = batch["pixel_values"].reshape(-1, *batch["pixel_values"].shape[-4:])
+                # batch["pixel_values"] = batch["pixel_values"].reshape(-1, *batch["pixel_values"].shape[-4:])
 
-                # Convert images to latent space
-                latent_dist = vae.encode(batch["pixel_values"].reshape(-1, *batch["pixel_values"].shape[-3:]).to(weight_dtype)).latent_dist
-                latents = latent_dist.sample()
-                latents = latents * vae.config.scaling_factor
-                latents = latents.reshape(-1, nframes, *latents.shape[-3:]) # B, T, C, H, W
+                # # Convert images to latent space
+                # latent_dist = vae.encode(batch["pixel_values"].reshape(-1, *batch["pixel_values"].shape[-3:]).to(weight_dtype)).latent_dist
+                # latents = latent_dist.sample()
+                # latents = latents * vae.config.scaling_factor
+                # latents = latents.reshape(-1, nframes, *latents.shape[-3:]) # B, T, C, H, W
+
+
+                input_occs, target_occs, metas = batch
+
+                # input_occs = input_occs[:, :10]
+                # target_occs = target_occs[:, :10]
+
+                occ_z, occ_shapes = occ_vae.forward_encoder(input_occs)
+                occ_z = occ_z.to(weight_dtype)
+                latents, occ_z_mu, occ_z_sigma, occ_logvar = occ_vae.sample_z(occ_z)
+                latents = latents.unsqueeze(0)
+                occ_z_mu = occ_z_mu.unsqueeze(0)
 
                 bsz = latents.shape[0]
 
@@ -1171,23 +1215,14 @@ def main():
                     noise_aug_strength = math.exp(random.normalvariate(mu=-3, sigma=0.5))
                 else:
                     noise_aug_strength = 0.0
-                # first_frame_image = batch["pixel_values"][:, 0]
+
+                # first_frame_image = batch["pixel_values"][:, nframes_past-1]
                 # first_frame_image = first_frame_image + noise_aug_strength * torch.randn_like(first_frame_image)
                 # first_frame_latent = vae.encode(first_frame_image.to(weight_dtype)).latent_dist.mode()* vae.config.scaling_factor   
                 # first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
 
-                # first_frame_image = batch["pixel_values"][:, :nframes_past]
-                # first_frame_image = first_frame_image.reshape(-1, *first_frame_image.shape[-3:])
-                # first_frame_image = first_frame_image + noise_aug_strength * torch.randn_like(first_frame_image)
-                # first_frame_latent = vae.encode(first_frame_image.to(weight_dtype)).latent_dist.mode()* vae.config.scaling_factor   
-                # first_frame_latent = first_frame_latent.reshape(bsz, nframes_past, *first_frame_latent.shape[-3:])
-                # first_frame_latent = first_frame_latent.reshape(bsz, -1, *first_frame_latent.shape[-2:])
-                # first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
-
-                first_frame_image = batch["pixel_values"][:, nframes_past-1]
-                first_frame_image = first_frame_image + noise_aug_strength * torch.randn_like(first_frame_image)
-                first_frame_latent = vae.encode(first_frame_image.to(weight_dtype)).latent_dist.mode()* vae.config.scaling_factor   
-                first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
+                first_frame_latent = occ_z_mu[:, nframes_past-1]
+                first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, input_occs.shape[1], 1, 1, 1)
 
                 # Add noise to the latents according to the noise magnitude at each timestep, keep same to EDM formulation
                 P_std = args.p_std
@@ -1201,7 +1236,7 @@ def main():
                 c_noise = (sigma.log() / 4).reshape([bsz])
                 loss_weight = (sigma ** 2 + 1) / sigma ** 2
 
-                sigma = sigma.repeat_interleave(batch["pixel_values"].shape[1], dim=1)
+                sigma = sigma.repeat_interleave(input_occs.shape[1], dim=1)
                 cond_mask = torch.zeros_like(sigma)
                 cond_mask[:, :nframes_past] = 1
                 sigma = (1 - cond_mask) * sigma
@@ -1209,51 +1244,40 @@ def main():
                 noisy_latents = latents + torch.randn_like(latents) * sigma
 
                 # condition
-                # first_frame_info = batch['images'][0][0]
+
                 # image_list = []
                 # for cur_cam_img in batch['images']:
-                #     first_frame_info = cur_cam_img[0][0]
+                #     cur_image_list = []
+                #     for idx_frame in range(nframes_past):
+                #         first_frame_info = cur_cam_img[idx_frame][0]
 
-                #     # We normalize the image before resizing to match with the original implementation.
-                #     # Then we unnormalize it after resizing.
-                #     image = first_frame_info * 2.0 - 1.0
-                #     image = _resize_with_antialiasing(image, (224, 224))
-                #     image = (image + 1.0) / 2.0
-                #     image_list.append(image)
+                #         # We normalize the image before resizing to match with the original implementation.
+                #         # Then we unnormalize it after resizing.
+                #         image = first_frame_info * 2.0 - 1.0
+                #         image = _resize_with_antialiasing(image, (224, 224))
+                #         image = (image + 1.0) / 2.0
+                #         cur_image_list.append(image)
+                #     cur_image = torch.cat(cur_image_list, dim=1)
+                #     image_list.append(cur_image)
 
-                image_list = []
-                for cur_cam_img in batch['images']:
-                    cur_image_list = []
-                    for idx_frame in range(nframes_past):
-                        first_frame_info = cur_cam_img[idx_frame][0]
+                # image = torch.cat(image_list, dim=1)                        
 
-                        # We normalize the image before resizing to match with the original implementation.
-                        # Then we unnormalize it after resizing.
-                        image = first_frame_info * 2.0 - 1.0
-                        image = _resize_with_antialiasing(image, (224, 224))
-                        image = (image + 1.0) / 2.0
-                        cur_image_list.append(image)
-                    cur_image = torch.cat(cur_image_list, dim=1)
-                    image_list.append(cur_image)
+                # cond_transforms = torchvision.transforms.Compose(
+                # [
+                #     torchvision.transforms.Normalize([0.48145466,0.4578275,0.40821073], [0.26862954, 0.26130258, 0.27577711]),
+                # ]
+                # )
 
-                image = torch.cat(image_list, dim=1)                        
-
-                cond_transforms = torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.Normalize([0.48145466,0.4578275,0.40821073], [0.26862954, 0.26130258, 0.27577711]),
-                ]
-                )
-
-                image = image.permute(1,0,2,3)
+                # image = image.permute(1,0,2,3)
                 
-                # Normalize the image with for CLIP input
-                image = cond_transforms(image)
-                # image_embeddings = image_encoder(image).image_embeds
-                image_embeddings = image_encoder(image.to(weight_dtype)).image_embeds
-                # image_embeddings = image_embeddings.unsqueeze(1)
-                image_embeddings = image_embeddings.reshape(bsz, nframes_past, -1)
+                # # Normalize the image with for CLIP input
+                # image = cond_transforms(image)
+                # # image_embeddings = image_encoder(image).image_embeds
+                # image_embeddings = image_encoder(image.to(weight_dtype)).image_embeds
+                # # image_embeddings = image_embeddings.unsqueeze(1)
+                # image_embeddings = image_embeddings.reshape(bsz, nframes_past, -1)
 
-                encoder_hidden_states = image_embeddings
+                # encoder_hidden_states = image_embeddings
 
                 if args.conditioning_dropout_prob > 0:
                     random_p0 = torch.rand(bsz, device=latents.device)
@@ -1262,15 +1286,18 @@ def main():
                     prompt_mask = prompt_mask.reshape(bsz,1,1)
                     prompt_mask_concat = prompt_mask.reshape(bsz,1,1,1,1)
 
-                    encoder_hidden_states = torch.where(prompt_mask, torch.zeros_like(encoder_hidden_states),encoder_hidden_states)
+                    # encoder_hidden_states = torch.where(prompt_mask, torch.zeros_like(encoder_hidden_states),encoder_hidden_states)
                     first_frame_latents = torch.where(prompt_mask_concat, torch.zeros_like(first_frame_latents),first_frame_latents)
+
+                encoder_hidden_states = torch.zeros([bsz, 2, 1024], dtype=latents.dtype, device=latents.device)
 
                 # Get the target for loss depending on the prediction type
                 if args.prediction_type is not None:
                     # set prediction_type of scheduler if defined
                     noise_scheduler.register_to_config(prediction_type=args.prediction_type)
 
-                input_latents = torch.cat([c_in * noisy_latents, first_frame_latents/vae.config.scaling_factor], dim=2)    
+                # input_latents = torch.cat([c_in * noisy_latents, first_frame_latents/vae.config.scaling_factor], dim=2)    
+                input_latents = torch.cat([c_in * noisy_latents, first_frame_latents], dim=2)    
 
                 # don't understand this
                 fps = args.fps
