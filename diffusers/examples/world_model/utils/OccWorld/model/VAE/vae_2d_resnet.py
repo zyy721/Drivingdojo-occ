@@ -512,6 +512,7 @@ class CustomVAERes2D(BaseModule):
         x = x.reshape(bs*F, H, W, D * self.expansion).permute(0, 3, 1, 2)
 
         z, shapes = self.encoder(x)
+        z = self.quant_conv(z)
         return z, shapes
         
     def forward_decoder(self, z, shapes, input_shape):
@@ -536,7 +537,6 @@ class CustomVAERes2D(BaseModule):
             z_sampled, loss, info = self.vqvae(z, is_voxel=False)
             output_dict.update({'embed_loss': loss})
         else:
-            z = self.quant_conv(z)
             z_sampled, z_mu, z_sigma, logvar = self.sample_z(z)
             output_dict.update({
                 'z_mu': z_mu,

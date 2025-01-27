@@ -1203,8 +1203,9 @@ def main():
                 # target_occs = target_occs[:, :10]
 
                 occ_z, occ_shapes = occ_vae.forward_encoder(input_occs)
-                occ_z = occ_z.to(weight_dtype)
                 latents, occ_z_mu, occ_z_sigma, occ_logvar = occ_vae.sample_z(occ_z)
+                latents = latents.to(weight_dtype)
+                occ_z_mu = occ_z_mu.to(weight_dtype)
                 latents = latents.unsqueeze(0)
                 occ_z_mu = occ_z_mu.unsqueeze(0)
 

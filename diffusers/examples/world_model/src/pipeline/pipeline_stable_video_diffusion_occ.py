@@ -70,7 +70,7 @@ class StableVideoDiffusionPipelineOutput(BaseOutput):
     frames: Union[List[List[PIL.Image.Image]], np.ndarray, torch.Tensor]
 
 
-class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
+class StableVideoDiffusionPipelineOcc(StableVideoDiffusionPipeline):
     r"""
     Pipeline to generate video from an input image using Stable Video Diffusion.
 
@@ -193,15 +193,123 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
 
         return image_embeddings
 
-    def _encode_vae_image(
+
+    def _occ_encode_image(
+        self,
+        # image: PipelineImageInput,
+        input_dict: dict,
+        nframes_past: int,
+        batch_size: int,
+
+        device: Union[str, torch.device],
+        num_videos_per_prompt: int,
+        do_classifier_free_guidance: bool,
+    ) -> torch.Tensor:
+        dtype = next(self.image_encoder.parameters()).dtype
+
+        # if not isinstance(image, torch.Tensor):
+        #     image = self.video_processor.pil_to_numpy(image)
+        #     image = self.video_processor.numpy_to_pt(image)
+
+        #     # We normalize the image before resizing to match with the original implementation.
+        #     # Then we unnormalize it after resizing.
+        #     image = image * 2.0 - 1.0
+        #     image = _resize_with_antialiasing(image, (224, 224))
+        #     image = (image + 1.0) / 2.0
+
+        # image_list = []
+        # for cur_cam_img in input_dict['images']:
+        #     cur_image_list = []
+        #     for idx_frame in range(nframes_past):
+        #         first_frame_info = cur_cam_img[idx_frame][0]
+
+        #         # We normalize the image before resizing to match with the original implementation.
+        #         # Then we unnormalize it after resizing.
+        #         image = first_frame_info * 2.0 - 1.0
+        #         image = _resize_with_antialiasing(image, (224, 224))
+        #         image = (image + 1.0) / 2.0
+        #         cur_image_list.append(image)
+        #     cur_image = torch.cat(cur_image_list, dim=1)
+        #     image_list.append(cur_image)
+
+        # image = torch.cat(image_list, dim=1)         
+
+        # image = image.permute(1,0,2,3)
+
+        # # Normalize the image with for CLIP input
+        # image = self.feature_extractor(
+        #     images=image,
+        #     do_normalize=True,
+        #     do_center_crop=False,
+        #     do_resize=False,
+        #     do_rescale=False,
+        #     return_tensors="pt",
+        # ).pixel_values
+
+        # image = image.to(device=device, dtype=dtype)
+        # image_embeddings = self.image_encoder(image).image_embeds
+        # # image_embeddings = image_embeddings.unsqueeze(1)
+        # image_embeddings = image_embeddings.reshape(batch_size, nframes_past, -1)
+
+        image_embeddings = torch.zeros([batch_size, 2, 1024], dtype=dtype, device=device)
+
+
+        # duplicate image embeddings for each generation per prompt, using mps friendly method
+        bs_embed, seq_len, _ = image_embeddings.shape
+        image_embeddings = image_embeddings.repeat(1, num_videos_per_prompt, 1)
+        image_embeddings = image_embeddings.view(bs_embed * num_videos_per_prompt, seq_len, -1)
+
+        if do_classifier_free_guidance:
+            negative_image_embeddings = torch.zeros_like(image_embeddings)
+
+            # For classifier free guidance, we need to do two forward passes.
+            # Here we concatenate the unconditional and text embeddings into a single batch
+            # to avoid doing two forward passes
+            image_embeddings = torch.cat([negative_image_embeddings, image_embeddings])
+
+        return image_embeddings
+    
+
+    # def _encode_vae_image(
+    #     self,
+    #     image: torch.Tensor,
+    #     device: Union[str, torch.device],
+    #     num_videos_per_prompt: int,
+    #     do_classifier_free_guidance: bool,
+    # ):
+    #     image = image.to(device=device)
+    #     image_latents = self.vae.encode(image).latent_dist.mode()
+
+    #     # duplicate image_latents for each generation per prompt, using mps friendly method
+    #     image_latents = image_latents.repeat(num_videos_per_prompt, 1, 1, 1)
+
+    #     if do_classifier_free_guidance:
+    #         negative_image_latents = torch.zeros_like(image_latents)
+
+    #         # For classifier free guidance, we need to do two forward passes.
+    #         # Here we concatenate the unconditional and text embeddings into a single batch
+    #         # to avoid doing two forward passes
+    #         image_latents = torch.cat([negative_image_latents, image_latents])
+
+    #     return image_latents
+
+
+    def _occ_encode_vae_image(
         self,
         image: torch.Tensor,
         device: Union[str, torch.device],
         num_videos_per_prompt: int,
         do_classifier_free_guidance: bool,
+
+        image_latents: torch.Tensor,
+
     ):
         image = image.to(device=device)
-        image_latents = self.vae.encode(image).latent_dist.mode()
+        # image_latents = self.vae.encode(image).latent_dist.mode()
+
+        # occ_z, occ_shapes = occ_vae.forward_encoder(image)
+        # latents, occ_z_mu, occ_z_sigma, occ_logvar = occ_vae.sample_z(occ_z)
+        # image_latents = occ_z_mu.to(torch.float16)
 
         # duplicate image_latents for each generation per prompt, using mps friendly method
         image_latents = image_latents.repeat(num_videos_per_prompt, 1, 1, 1)
@@ -215,6 +323,7 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
             image_latents = torch.cat([negative_image_latents, image_latents])
 
         return image_latents
+
 
     def _get_add_time_ids(
         self,
@@ -273,6 +382,38 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
         frames = frames.float()
         return frames
 
+
+    def occ_decode_latents(self, latents: torch.Tensor, num_frames: int, decode_chunk_size: int = 14, occ_vae: Optional[torch.Tensor] = None):
+        # [batch, frames, channels, height, width] -> [batch*frames, channels, height, width]
+        latents = latents.flatten(0, 1)
+        frames = latents
+
+        # latents = 1 / self.vae.config.scaling_factor * latents
+
+        # forward_vae_fn = self.vae._orig_mod.forward if is_compiled_module(self.vae) else self.vae.forward
+        # accepts_num_frames = "num_frames" in set(inspect.signature(forward_vae_fn).parameters.keys())
+
+        # # decode decode_chunk_size frames at a time to avoid OOM
+        # frames = []
+        # for i in range(0, latents.shape[0], decode_chunk_size):
+        #     num_frames_in = latents[i : i + decode_chunk_size].shape[0]
+        #     decode_kwargs = {}
+        #     if accepts_num_frames:
+        #         # we only pass num_frames_in if it's expected
+        #         decode_kwargs["num_frames"] = num_frames_in
+
+        #     frame = self.vae.decode(latents[i : i + decode_chunk_size], **decode_kwargs).sample
+        #     frames.append(frame)
+        # frames = torch.cat(frames, dim=0)
+
+        # # [batch*frames, channels, height, width] -> [batch, channels, frames, height, width]
+        # frames = frames.reshape(-1, num_frames, *frames.shape[1:]).permute(0, 2, 1, 3, 4)
+
+        # we always cast to float32 as this does not cause significant overhead and is compatible with bfloat16
+        frames = frames.float()
+        return frames
+
+
     # def check_inputs(self, image, height, width):
     #     if (
     #         not isinstance(image, torch.Tensor)
@@ -309,6 +450,48 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
             num_channels_latents // 2,
             height // self.vae_scale_factor,
             width // self.vae_scale_factor,
+        )
+        if isinstance(generator, list) and len(generator) != batch_size:
+            raise ValueError(
+                f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
+                f" size of {batch_size}. Make sure the batch size matches the length of the generators."
+            )
+
+        if latents is None:
+            latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+        else:
+            latents = latents.to(device)
+
+        # scale the initial noise by the standard deviation required by the scheduler
+        latents = latents * self.scheduler.init_noise_sigma
+        return latents
+
+
+    def occ_prepare_latents(
+        self,
+        batch_size: int,
+        num_frames: int,
+        num_channels_latents: int,
+        height: int,
+        width: int,
+        dtype: torch.dtype,
+        device: Union[str, torch.device],
+        generator: torch.Generator,
+        latents: Optional[torch.Tensor] = None,
+    ):
+        # shape = (
+        #     batch_size,
+        #     num_frames,
+        #     num_channels_latents // 2,
+        #     height // self.vae_scale_factor,
+        #     width // self.vae_scale_factor,
+        # )
+        shape = (
+            batch_size,
+            num_frames,
+            64,
+            50,
+            50,
         )
         if isinstance(generator, list) and len(generator) != batch_size:
             raise ValueError(
@@ -370,6 +553,8 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
         cond_mask: Optional[torch.Tensor] = None,
         nframes_past: int = 10,
         cond_frame: Optional[torch.Tensor] = None,
+        occ_z_mu: Optional[torch.Tensor] = None,
+        occ_vae: Optional[torch.Tensor] = None,
 
     ):
         r"""
@@ -452,7 +637,7 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
 
         # 1. Check inputs. Raise error if not correct
         # self.check_inputs(image, height, width)
-        self.check_inputs(height, width)
+        # self.check_inputs(height, width)
 
         # 2. Define call parameters
         # if isinstance(image, PIL.Image.Image):
@@ -472,7 +657,9 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
         # 3. Encode input image
         # image_embeddings = self._encode_image(image, device, num_videos_per_prompt, self.do_classifier_free_guidance)
 
-        image_embeddings = self._encode_image(input_dict, nframes_past, batch_size, device, num_videos_per_prompt, self.do_classifier_free_guidance)
+        # image_embeddings = self._encode_image(input_dict, nframes_past, batch_size, device, num_videos_per_prompt, self.do_classifier_free_guidance)
+        
+        image_embeddings = self._occ_encode_image(input_dict, nframes_past, batch_size, device, num_videos_per_prompt, self.do_classifier_free_guidance)
 
 
         # NOTE: Stable Video Diffusion was conditioned on fps - 1, which is why it is reduced here.
@@ -485,24 +672,34 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
         # image = image + noise_aug_strength * noise
 
         image = input_dict["pixel_values"][:, nframes_past-1].to(device)
-        noise = randn_tensor(image.shape, generator=generator, device=device, dtype=image.dtype)
-        image = image + noise_aug_strength * noise
+        # noise = randn_tensor(image.shape, generator=generator, device=device, dtype=image.dtype)
+        # image = image + noise_aug_strength * noise
 
         needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast
         if needs_upcasting:
             self.vae.to(dtype=torch.float32)
+            occ_vae.to(dtype=torch.float32)
 
-        image_latents = self._encode_vae_image(
+        # image_latents = self._encode_vae_image(
+        #     image,
+        #     device=device,
+        #     num_videos_per_prompt=num_videos_per_prompt,
+        #     do_classifier_free_guidance=self.do_classifier_free_guidance,
+        # )
+        image_latents = occ_z_mu[:, nframes_past-1]
+        image_latents = self._occ_encode_vae_image(
             image,
             device=device,
             num_videos_per_prompt=num_videos_per_prompt,
             do_classifier_free_guidance=self.do_classifier_free_guidance,
+            image_latents=image_latents,
         )
         image_latents = image_latents.to(image_embeddings.dtype)
 
         # cast back to fp16 if needed
         if needs_upcasting:
             self.vae.to(dtype=torch.float16)
+            occ_vae.to(dtype=torch.float16)
 
         # Repeat the image latents for each frame so we can concatenate them with the noise
         # image_latents [batch, channels, height, width] ->[batch, num_frames, channels, height, width]
@@ -525,7 +722,19 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
 
         # 7. Prepare latent variables
         num_channels_latents = self.unet.config.in_channels
-        latents = self.prepare_latents(
+        # latents = self.prepare_latents(
+        #     batch_size * num_videos_per_prompt,
+        #     num_frames,
+        #     num_channels_latents,
+        #     height,
+        #     width,
+        #     image_embeddings.dtype,
+        #     device,
+        #     generator,
+        #     latents,
+        # )
+
+        latents = self.occ_prepare_latents(
             batch_size * num_videos_per_prompt,
             num_frames,
             num_channels_latents,
@@ -597,8 +806,11 @@ class StableVideoDiffusionPipelineMultiview(StableVideoDiffusionPipeline):
             # cast back to fp16 if needed
             if needs_upcasting:
                 self.vae.to(dtype=torch.float16)
-            frames = self.decode_latents(latents, num_frames, decode_chunk_size)
-            frames = self.video_processor.postprocess_video(video=frames, output_type=output_type)
+            # frames = self.decode_latents(latents, num_frames, decode_chunk_size)
+            # frames = self.video_processor.postprocess_video(video=frames, output_type=output_type)
+
+            frames = self.occ_decode_latents(latents, num_frames, decode_chunk_size, occ_vae)
+
         else:
             frames = latents
 
