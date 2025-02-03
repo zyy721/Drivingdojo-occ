@@ -85,7 +85,7 @@ def get_dataloader(
         dataset=val_wrapper,
         batch_size=val_loader["batch_size"],
         collate_fn=custom_collate_fn_temporal,
-        shuffle=True,
+        shuffle=False,
         num_workers=val_loader["num_workers"],
     )
 

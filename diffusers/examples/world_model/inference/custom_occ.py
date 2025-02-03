@@ -67,7 +67,8 @@ dataset_name = '../../../data/sample_nusc_video_all_cam_val.pkl'
 # model path
 pretrained_model_path = 'demo_model/img2video_1024_14f'
 # model_path = '../../work_dirs/nusc_fsdp_svd_front_576320_30f/checkpoint-0'
-model_path = '../../work_dirs/nusc_deepspeed_svd_occ_576320_30f/checkpoint-0'
+model_path = '../../work_dirs/nusc_deepspeed_svd_occ_576320_30f/checkpoint-70000'
+# model_path = '../../work_dirs/nusc_deepspeed_svd_occ_576320_30f/checkpoint-30000'
 
 # initial image path
 # img_path = 'demo_img/0010_CameraFpgaP0H120.jpg'
@@ -132,7 +133,8 @@ train_dataloader, val_dataloader = get_dataloader(
     cfg.train_loader,
     cfg.val_loader)
 
-ckpt_occ_vae = torch.load('demo_model/epoch_1.pth', map_location='cpu')
+# ckpt_occ_vae = torch.load('demo_model/epoch_1.pth', map_location='cpu')
+ckpt_occ_vae = torch.load('demo_model/epoch_195.pth', map_location='cpu')
 if 'state_dict' in ckpt_occ_vae:
     state_dict = ckpt_occ_vae['state_dict']
 else:
@@ -242,6 +244,9 @@ for batch_dict in val_dataloader:
 
     CalMeanIou_sem._after_step(result_dict['sem_pred'], target_occs)
     CalMeanIou_vox._after_step(result_dict['iou_pred'], target_occs_iou)
+
+    val_miou, _ = CalMeanIou_sem._after_epoch()
+    val_iou, _ = CalMeanIou_vox._after_epoch()
 
     # export_path = os.path.join(output_folder, 'test.gif')
 
