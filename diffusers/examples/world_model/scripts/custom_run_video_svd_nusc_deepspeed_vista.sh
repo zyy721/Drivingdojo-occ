@@ -4,8 +4,8 @@
 export MODEL_NAME="examples/world_model/demo_model/img2video_1024_14f" # SD官方模型路径 
 export DATASET_NAME="../data/sample_nusc_video_all_cam_train.pkl"
 
-WORK=nusc_deepspeed_svd_front_576320_30f
-EXP=nusc_deepspeed_svd_front
+WORK=nusc_deepspeed_svd_front_576320_30f_vista
+EXP=nusc_deepspeed_svd_front_vista
 
 
 accelerate launch --config_file examples/world_model/configs/4_gpus_deepspeed_zero2.yaml --main_process_port 12000 examples/world_model/custom_train_video_svd_deepspeed_vista.py \

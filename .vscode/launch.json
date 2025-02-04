@@ -345,12 +345,6 @@
                 "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
                 "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
             },
-
-            // "args": [
-            //     "--project_name", "DriveDreamer2",
-            //     "--config_name", "custom_drivedreamer2_img_cond",
-            //     "--runners", "drivedreamer2.DriveDreamer2_Tester"
-            // ]
         },
 
         {
@@ -479,6 +473,23 @@
                 "--image_height", "320", "--image_width", "576", "--conditioning_dropout_prob=0.2", "--seed_for_gen=42", "--ddim", "--checkpointing_steps",
                 "20000", "--tracker_project_name", "nusc_fsdp_svd_front", "--load_from_pkl", "--gradient_checkpointing", "--report_to", "wandb"
             ]
+        },
+
+        {
+            "name": "drivingdojo_inference_vista",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./inference/custom_img2video_vista.py",
+
+            
+            "python": "/home/zhuyiyao/miniconda3/envs/dojo/bin/python",
+            "console": "integratedTerminal",
+            "cwd": "/home/zhuyiyao/Drivingdojo/diffusers/examples/world_model",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0", // "0,1,2,3",
+                "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}",
+            },
         },
 
         {
