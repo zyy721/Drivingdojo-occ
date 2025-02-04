@@ -4,11 +4,11 @@ from diffusers import StableVideoDiffusionPipeline
 from diffusers.utils import load_image
 import imageio
 
-from src.model.unet_spatio_temporal_condition_multiview import UNetSpatioTemporalConditionModelMultiview
+# from src.model.unet_spatio_temporal_condition_multiview import UNetSpatioTemporalConditionModelMultiview
+from src.model.unet_spatio_temporal_condition_multiview_vista import UNetSpatioTemporalConditionModelMultiviewVista
 from utils.custom_video_datasets import VideoNuscenesDataset
 from torchvision import transforms
-# from src.pipeline.pipeline_stable_video_diffusion_multiview import StableVideoDiffusionPipelineMultiview
-from src.model.unet_spatio_temporal_condition_multiview_vista import UNetSpatioTemporalConditionModelMultiviewVista
+from src.pipeline.pipeline_stable_video_diffusion_multiview import StableVideoDiffusionPipelineMultiview
 from PIL import Image
 import numpy as np
 
