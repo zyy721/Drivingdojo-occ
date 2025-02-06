@@ -71,7 +71,7 @@ from diffusers.utils.torch_utils import randn_tensor
 if is_wandb_available():
     import wandb
 
-from src.model.unet_spatio_temporal_condition_multiview_vista import UNetSpatioTemporalConditionModelMultiviewVista
+from src.model.unet_spatio_temporal_condition_multiview import UNetSpatioTemporalConditionModelMultiview
 
 # from transformers.integrations import PeftAdapterMixin, deepspeed_config, is_deepspeed_zero3_enabled
 
@@ -96,8 +96,6 @@ from accelerate.utils.dataclasses import DeepSpeedPlugin
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 import deepspeed
-
-from safetensors.torch import load_file as load_safetensors
 
 
 logger = get_logger(__name__, log_level="INFO")
@@ -840,11 +838,8 @@ def main():
         # "nframes_past": nframes_past,
 
     }
-
-    vista_svd = load_safetensors("examples/world_model/demo_model/diffusion_vista.safetensors")
-
     # unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
-    unet = UNetSpatioTemporalConditionModelMultiviewVista.from_unet_spatio_temporal_condition(unet_origin, vista_svd, **unet_param)
+    unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
 
     # tokenizer = CLIPTokenizer.from_pretrained(
     #     args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
@@ -876,8 +871,8 @@ def main():
         # ema_unet = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision)
         # ema_unet = EMAModel(ema_unet.parameters(), model_cls=UNetSpatioTemporalConditionModel, model_config=ema_unet.config)
 
-        ema_unet = UNetSpatioTemporalConditionModelMultiviewVista.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
-        ema_unet = EMAModel(ema_unet.parameters(), model_cls=UNetSpatioTemporalConditionModelMultiviewVista, model_config=ema_unet.config)    
+        ema_unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
+        ema_unet = EMAModel(ema_unet.parameters(), model_cls=UNetSpatioTemporalConditionModelMultiview, model_config=ema_unet.config)    
 
 
     if args.enable_xformers_memory_efficient_attention:
@@ -944,7 +939,7 @@ def main():
                 
                 if i==1:
                     # load_model = UNetSpatioTemporalConditionModel.from_pretrained(input_dir, subfolder="unet")
-                    load_model = UNetSpatioTemporalConditionModelMultiviewVista.from_pretrained(input_dir, subfolder="unet")
+                    load_model = UNetSpatioTemporalConditionModelMultiview.from_pretrained(input_dir, subfolder="unet")
 
                     model.register_to_config(**load_model.config)
 
@@ -1176,10 +1171,10 @@ def main():
                     noise_aug_strength = math.exp(random.normalvariate(mu=-3, sigma=0.5))
                 else:
                     noise_aug_strength = 0.0
-                # first_frame_image = batch["pixel_values"][:, 0]
-                # first_frame_image = first_frame_image + noise_aug_strength * torch.randn_like(first_frame_image)
-                # first_frame_latent = vae.encode(first_frame_image.to(weight_dtype)).latent_dist.mode()* vae.config.scaling_factor   
-                # first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
+                first_frame_image = batch["pixel_values"][:, 0]
+                first_frame_image = first_frame_image + noise_aug_strength * torch.randn_like(first_frame_image)
+                first_frame_latent = vae.encode(first_frame_image.to(weight_dtype)).latent_dist.mode()* vae.config.scaling_factor   
+                first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
 
                 # first_frame_image = batch["pixel_values"][:, :nframes_past]
                 # first_frame_image = first_frame_image.reshape(-1, *first_frame_image.shape[-3:])
@@ -1189,14 +1184,14 @@ def main():
                 # first_frame_latent = first_frame_latent.reshape(bsz, -1, *first_frame_latent.shape[-2:])
                 # first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
 
-                first_frame_image = batch["pixel_values"][:, nframes_past-1]
-                first_frame_image = first_frame_image + noise_aug_strength * torch.randn_like(first_frame_image)
-                first_frame_latent = vae.encode(first_frame_image.to(weight_dtype)).latent_dist.mode()* vae.config.scaling_factor   
-                first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
+                # first_frame_image = batch["pixel_values"][:, nframes_past-1]
+                # first_frame_image = first_frame_image + noise_aug_strength * torch.randn_like(first_frame_image)
+                # first_frame_latent = vae.encode(first_frame_image.to(weight_dtype)).latent_dist.mode()* vae.config.scaling_factor   
+                # first_frame_latents = first_frame_latent.unsqueeze(1).repeat(1, nframes, 1, 1, 1)
 
                 # Add noise to the latents according to the noise magnitude at each timestep, keep same to EDM formulation
-                P_std = args.p_std # 1.6
-                P_mean = args.p_mean # 0.7
+                P_std = args.p_std
+                P_mean = args.p_mean
                 rnd_normal = torch.randn([bsz, 1, 1, 1, 1], device=latents.device)
 
                 sigma = (rnd_normal * P_std + P_mean).exp()
@@ -1214,32 +1209,32 @@ def main():
                 noisy_latents = latents + torch.randn_like(latents) * sigma
 
                 # condition
-                # first_frame_info = batch['images'][0][0]
-                # image_list = []
-                # for cur_cam_img in batch['images']:
-                #     first_frame_info = cur_cam_img[0][0]
-
-                #     # We normalize the image before resizing to match with the original implementation.
-                #     # Then we unnormalize it after resizing.
-                #     image = first_frame_info * 2.0 - 1.0
-                #     image = _resize_with_antialiasing(image, (224, 224))
-                #     image = (image + 1.0) / 2.0
-                #     image_list.append(image)
-
+                first_frame_info = batch['images'][0][0]
                 image_list = []
                 for cur_cam_img in batch['images']:
-                    cur_image_list = []
-                    for idx_frame in range(nframes_past):
-                        first_frame_info = cur_cam_img[idx_frame][0]
+                    first_frame_info = cur_cam_img[0][0]
 
-                        # We normalize the image before resizing to match with the original implementation.
-                        # Then we unnormalize it after resizing.
-                        image = first_frame_info * 2.0 - 1.0
-                        image = _resize_with_antialiasing(image, (224, 224))
-                        image = (image + 1.0) / 2.0
-                        cur_image_list.append(image)
-                    cur_image = torch.cat(cur_image_list, dim=1)
-                    image_list.append(cur_image)
+                    # We normalize the image before resizing to match with the original implementation.
+                    # Then we unnormalize it after resizing.
+                    image = first_frame_info * 2.0 - 1.0
+                    image = _resize_with_antialiasing(image, (224, 224))
+                    image = (image + 1.0) / 2.0
+                    image_list.append(image)
+
+                # image_list = []
+                # for cur_cam_img in batch['images']:
+                #     cur_image_list = []
+                #     for idx_frame in range(nframes_past):
+                #         first_frame_info = cur_cam_img[idx_frame][0]
+
+                #         # We normalize the image before resizing to match with the original implementation.
+                #         # Then we unnormalize it after resizing.
+                #         image = first_frame_info * 2.0 - 1.0
+                #         image = _resize_with_antialiasing(image, (224, 224))
+                #         image = (image + 1.0) / 2.0
+                #         cur_image_list.append(image)
+                #     cur_image = torch.cat(cur_image_list, dim=1)
+                #     image_list.append(cur_image)
 
                 image = torch.cat(image_list, dim=1)                        
 
@@ -1255,8 +1250,8 @@ def main():
                 image = cond_transforms(image)
                 # image_embeddings = image_encoder(image).image_embeds
                 image_embeddings = image_encoder(image.to(weight_dtype)).image_embeds
-                # image_embeddings = image_embeddings.unsqueeze(1)
-                image_embeddings = image_embeddings.reshape(bsz, nframes_past, -1)
+                image_embeddings = image_embeddings.unsqueeze(1)
+                # image_embeddings = image_embeddings.reshape(bsz, nframes_past, -1)
 
                 encoder_hidden_states = image_embeddings
 
@@ -1384,7 +1379,7 @@ def main():
 
     if accelerator.is_main_process:
         # unet = UNetSpatioTemporalConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet", revision=args.non_ema_revision)
-        # unet = UNetSpatioTemporalConditionModelMultiviewVista.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
+        # unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
         # unet_ckpt = accelerator.unwrap_model(unet)
 
         # if args.use_ema:
