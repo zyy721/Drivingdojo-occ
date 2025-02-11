@@ -59,13 +59,13 @@ idx_permute_img = [5, 0, 1, 2, 3, 4]
 
 dataset_name = '../../../data/sample_nusc_video_all_cam_val.pkl'
 
-length = 3
+length = 5
 w = 576
 h = 320
 interval = 1
 val_batch_size = 1
 dataloader_num_workers = 2
-nframes_past = 1
+nframes_past = 2
 
 # model path
 pretrained_model_path = 'demo_model/img2video_1024_14f'
@@ -134,42 +134,43 @@ idx = 0
 
 device = pipe._execution_device
 
-for batch_dict in val_dataloader:
+with torch.no_grad():
+    for batch_dict in val_dataloader:
 
-    batch_dict["pixel_values"] = batch_dict["pixel_values"].reshape(-1, *batch_dict["pixel_values"].shape[-4:])
-    
-    cond_frame_pixel_values = batch_dict["pixel_values"].to(torch.float16).reshape(-1, *batch_dict["pixel_values"].shape[-3:])
-    cond_frame_dist = pipe.vae.encode(cond_frame_pixel_values.to(device)).latent_dist
-    cond_frame = cond_frame_dist.sample()
-    cond_frame = cond_frame * pipe.vae.config.scaling_factor
-    cond_frame = cond_frame.reshape(-1, length, *cond_frame.shape[-3:])
+        batch_dict["pixel_values"] = batch_dict["pixel_values"].reshape(-1, *batch_dict["pixel_values"].shape[-4:])
+        
+        cond_frame_pixel_values = batch_dict["pixel_values"].to(torch.float16).reshape(-1, *batch_dict["pixel_values"].shape[-3:])
+        cond_frame_dist = pipe.vae.encode(cond_frame_pixel_values.to(device)).latent_dist
+        cond_frame = cond_frame_dist.sample()
+        cond_frame = cond_frame * pipe.vae.config.scaling_factor
+        cond_frame = cond_frame.reshape(-1, length, *cond_frame.shape[-3:])
 
-    initial_cond_mask = torch.zeros(cond_frame.shape[0], length, 1, 1, 1).to(torch.float16).to(device)
-    initial_cond_mask[:, :nframes_past] = 1
+        initial_cond_mask = torch.zeros(cond_frame.shape[0], length, 1, 1, 1).to(torch.float16).to(device)
+        initial_cond_mask[:, :nframes_past] = 1
 
-    # frames = pipe(image, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0.01, fps = 5, generator=generator).frames[0]
-    # frames = pipe(batch_dict, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0, fps = 2, generator=generator).frames
-    frames = pipe(batch_dict, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0, fps = 2, generator=generator, cond_mask=initial_cond_mask, nframes_past=nframes_past, cond_frame=cond_frame).frames
+        # frames = pipe(image, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0.01, fps = 5, generator=generator).frames[0]
+        # frames = pipe(batch_dict, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0, fps = 2, generator=generator).frames
+        frames = pipe(batch_dict, width=w, height=h,num_frames=length, num_inference_steps=25, noise_aug_strength=0, fps = 2, generator=generator, cond_mask=initial_cond_mask, nframes_past=nframes_past, cond_frame=cond_frame).frames
 
-    # export_path = os.path.join(output_folder, 'test.gif')
+        # export_path = os.path.join(output_folder, 'test.gif')
 
-    # # export to gif
-    # imageio.mimsave(export_path, frames, format='GIF', duration=200, loop=0)
+        # # export to gif
+        # imageio.mimsave(export_path, frames, format='GIF', duration=200, loop=0)
 
-    all_multiview_imgs = []        
-    for idx_frame in range(length):
-        cur_multiview_imgs = []
-        for idx_cam in idx_permute_img:
-            cur_multiview_imgs.append(frames[idx_cam][idx_frame])
-        cur_row_first = concat_images(cur_multiview_imgs[:3], pad=0)
-        cur_row_last = concat_images(cur_multiview_imgs[3:], pad=0)
-        cat_cur_multiview_imgs = concat_images([cur_row_first, cur_row_last], direction='vertical')
+        all_multiview_imgs = []        
+        for idx_frame in range(length):
+            cur_multiview_imgs = []
+            for idx_cam in idx_permute_img:
+                cur_multiview_imgs.append(frames[idx_cam][idx_frame])
+            cur_row_first = concat_images(cur_multiview_imgs[:3], pad=0)
+            cur_row_last = concat_images(cur_multiview_imgs[3:], pad=0)
+            cat_cur_multiview_imgs = concat_images([cur_row_first, cur_row_last], direction='vertical')
 
-        all_multiview_imgs.append(cat_cur_multiview_imgs)
+            all_multiview_imgs.append(cat_cur_multiview_imgs)
 
-        cat_cur_multiview_imgs.save('{:06d}_{}.jpg'.format(idx, idx_frame))
+            cat_cur_multiview_imgs.save('{:06d}_{}.jpg'.format(idx, idx_frame))
 
-    imageio.mimsave(os.path.join(output_folder, '{:06d}.mp4'.format(idx)), all_multiview_imgs, fps=2)
-    idx += 1
+        imageio.mimsave(os.path.join(output_folder, '{:06d}.mp4'.format(idx)), all_multiview_imgs, fps=2)
+        idx += 1
 
 
