@@ -49,6 +49,12 @@ class VideoNuscenesDataset(data.Dataset):
         else:
             self.videos, self.conds = self._make_dataset_video(data_root, video_length)
 
+        if not self.multi_view:
+            all_videos_list = []
+            for cur_cam_videos in self.videos.values():
+                all_videos_list = all_videos_list + cur_cam_videos
+            self.videos = all_videos_list
+
         self.default_transforms = tr.Compose(
             [
                 tr.ToTensor(),
@@ -96,6 +102,14 @@ class VideoNuscenesDataset(data.Dataset):
 
 
         else:
+            # print('not support yet')
+            pixel_values_list = []
+            images_list = []
+            # init_frame = random.randint(0,len(self.videos['CAM_FRONT'][index])-self.video_length)
+            init_frame = random.randint(0,len(self.videos[index])-self.video_length)
+            # for cam_name, video in self.videos.items():
+            video = self.videos[index]
+            video = video[init_frame:init_frame+self.video_length]
             frames = self.load_and_transform_frames(video, self.loader, self.img_transform, img_size=self.image_size)
 
             frames = torch.cat(frames, 1) # c,t,h,w
@@ -105,10 +119,13 @@ class VideoNuscenesDataset(data.Dataset):
             # frames_low = torch.cat(frames_low, 1) # c,t,h,w
             # frames_low = frames_low.transpose(0, 1) # t,c,h,w
             
+            pixel_values_list.append(frames)
+            images_list.append(self.load_and_transform_frames(video, self.loader, img_size=self.image_size))
+
             example = dict()
-            example["pixel_values"] = frames
+            example["pixel_values"] = torch.stack(pixel_values_list)[0]
             # example["pixel_values_low"] = frames_low
-            example["images"] = self.load_and_transform_frames(video, self.loader, img_size=self.image_size)
+            example["images"] = images_list[0]
             if self.ego:
                 frames_ego = torch.tensor(conds)
                 example["ego_values"] = frames_ego / (0.5)
@@ -117,7 +134,12 @@ class VideoNuscenesDataset(data.Dataset):
 
     def __len__(self):
         # return len(self.videos)
-        return len(self.videos['CAM_FRONT'])
+        # return len(self.videos['CAM_FRONT'])
+
+        if self.multi_view:
+            return len(self.videos['CAM_FRONT'])
+        else:
+            return len(self.videos)
 
     
     def _make_dataset_video_ego(self, info_path, nframes):
