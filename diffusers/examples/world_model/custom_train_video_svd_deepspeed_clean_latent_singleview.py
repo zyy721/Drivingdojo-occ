@@ -1215,8 +1215,8 @@ def main():
                 # condition
                 # first_frame_info = batch['images'][0][0]
                 image_list = []
-                for cur_cam_img in batch['images']:
-                    first_frame_info = cur_cam_img[0]
+                for cur_cam_img in batch['images'][0]:
+                    first_frame_info = cur_cam_img
 
                     # We normalize the image before resizing to match with the original implementation.
                     # Then we unnormalize it after resizing.
