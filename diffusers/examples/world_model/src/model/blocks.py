@@ -84,6 +84,7 @@ class BasicMultiviewTransformerBlock(BasicTransformerBlock):
         neighboring_view_pair: Optional[Dict[int, List[int]]] = None,
         neighboring_attn_type: Optional[str] = "add",
         zero_module_type="zero_linear",
+        cur_num_frames = None,
     ):
         # super().__init__(
         #     dim, num_attention_heads, attention_head_dim, dropout,
@@ -97,6 +98,8 @@ class BasicMultiviewTransformerBlock(BasicTransformerBlock):
         upcast_attention, norm_elementwise_affine, norm_type, norm_eps, final_dropout,
         attention_type, positional_embeddings, num_positional_embeddings,
         ada_norm_continous_conditioning_embedding_dim, ada_norm_bias, ff_inner_dim, ff_bias, attention_out_bias)
+
+        self.cur_num_frames = cur_num_frames
 
         self.neighboring_view_pair = _ensure_kv_is_int(neighboring_view_pair)
         self.neighboring_attn_type = neighboring_attn_type
@@ -314,15 +317,15 @@ class BasicMultiviewTransformerBlock(BasicTransformerBlock):
 
         # multi-view cross attention
         if self.norm_type == "ada_norm":
-            norm_hidden_states = self.norm2(hidden_states, timestep)
+            norm_hidden_states = self.norm4(hidden_states, timestep)
         elif self.norm_type in ["ada_norm_zero", "layer_norm", "layer_norm_i2vgen"]:
-            norm_hidden_states = self.norm2(hidden_states)
+            norm_hidden_states = self.norm4(hidden_states)
         elif self.norm_type == "ada_norm_single":
             # For PixArt norm2 isn't applied here:
             # https://github.com/PixArt-alpha/PixArt-alpha/blob/0f55e922376d8b797edd44d25d0e7464b260dcab/diffusion/model/nets/PixArtMS.py#L70C1-L76C103
             norm_hidden_states = hidden_states
         elif self.norm_type == "ada_norm_continuous":
-            norm_hidden_states = self.norm2(hidden_states, added_cond_kwargs["pooled_text_emb"])
+            norm_hidden_states = self.norm4(hidden_states, added_cond_kwargs["pooled_text_emb"])
         else:
             raise ValueError("Incorrect norm")
 
@@ -330,8 +333,10 @@ class BasicMultiviewTransformerBlock(BasicTransformerBlock):
             norm_hidden_states = self.pos_embed(norm_hidden_states)
 
         # batch dim first, cam dim second
+        # norm_hidden_states = rearrange(
+        #     norm_hidden_states, '(b n) ... -> b n ...', n=self.n_cam)
         norm_hidden_states = rearrange(
-            norm_hidden_states, '(b n) ... -> b n ...', n=self.n_cam)
+            norm_hidden_states, '(b n t) ... -> (b t) n ...', n=self.n_cam, t=self.cur_num_frames)
         B = len(norm_hidden_states)
         # key is query in attention; value is key-value in attention
         hidden_states_in1, hidden_states_in2, cam_order = self._construct_attn_input(
@@ -352,7 +357,11 @@ class BasicMultiviewTransformerBlock(BasicTransformerBlock):
                 attn_out_mv = rearrange(attn_raw_output[cam_order == cam_i],
                                         '(n b) ... -> b n ...', b=B)
                 attn_output[:, cam_i] = torch.sum(attn_out_mv, dim=1)
-        attn_output = rearrange(attn_output, 'b n ... -> (b n) ...')
+        # attn_output = rearrange(attn_output, 'b n ... -> (b n) ...')
+
+        attn_output = rearrange(
+            attn_output, '(b t) n ... -> (b n t) ...', n=self.n_cam, t=self.cur_num_frames)
+
         # apply zero init connector (one layer)
         attn_output = self.connector(attn_output)
         # short-cut
@@ -415,10 +424,13 @@ class TemporalBasicMultiviewTransformerBlock(TemporalBasicTransformerBlock):
         neighboring_view_pair: Optional[Dict[int, List[int]]] = None,
         neighboring_attn_type: Optional[str] = "add",
         zero_module_type="zero_linear",
-
+        cur_num_frames = None,
     ):
         # super().__init__()
         super().__init__(dim, time_mix_inner_dim, num_attention_heads, attention_head_dim, cross_attention_dim)
+
+        self.cur_num_frames = cur_num_frames
+
         self.neighboring_view_pair = _ensure_kv_is_int(neighboring_view_pair)
         self.neighboring_attn_type = neighboring_attn_type
         # multiview attention

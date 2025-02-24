@@ -837,6 +837,8 @@ def main():
 
         # "nframes_past": nframes_past,
 
+        "cur_num_frames": args.nframes,
+
     }
     # unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)
     unet = UNetSpatioTemporalConditionModelMultiview.from_unet_spatio_temporal_condition(unet_origin, **unet_param)

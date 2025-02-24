@@ -488,7 +488,7 @@
                 // "--config_file", "examples/world_model/configs/fsdp.yaml", 
                 // "--config_file", "examples/world_model/configs/4_gpus_deepspeed_zero2.yaml", 
                 "--config_file", "examples/world_model/configs/2_gpus_deepspeed_zero3.yaml", 
-                "--main_process_port", "12005", 
+                "--main_process_port", "12007", 
                 // "examples/world_model/custom_train_video_svd_fsdp.py", 
                 "examples/world_model/custom_train_video_svd_deepspeed_clean_latent.py", 
                 // "--pretrained_model_name_or_path=../pretrain/stable-video-diffusion-img2vid-xt", 

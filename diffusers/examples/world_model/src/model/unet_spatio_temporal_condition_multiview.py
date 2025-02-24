@@ -121,6 +121,7 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
         img_size: Optional[Tuple[int, int]] = None,
 
         # nframes_past: int = 10,
+        cur_num_frames: int = 10,
 
     ):
         
@@ -161,6 +162,7 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
                         neighboring_view_pair=neighboring_view_pair,
                         neighboring_attn_type=neighboring_attn_type,
                         zero_module_type=zero_module_type,
+                        cur_num_frames=cur_num_frames,
                     ))
                 else:
                     raise TypeError(f"Unknown attn type: {crossview_attn_type}")
@@ -173,6 +175,7 @@ class UNetSpatioTemporalConditionModelMultiview(UNetSpatioTemporalConditionModel
                         neighboring_view_pair=neighboring_view_pair,
                         neighboring_attn_type=neighboring_attn_type,
                         zero_module_type=zero_module_type,
+                        cur_num_frames=cur_num_frames,
                     ))
                 else:
                     raise TypeError(f"Unknown attn type: {crossview_attn_type}")

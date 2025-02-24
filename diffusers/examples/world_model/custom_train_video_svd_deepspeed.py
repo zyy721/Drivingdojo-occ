@@ -1132,18 +1132,18 @@ def main():
 
         for step, batch in enumerate(train_dataloader):
 
-            save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
-            unet_ckpt = accelerator.unwrap_model(unet)
-            with deepspeed.zero.GatheredParameters(unet_ckpt.parameters(), modifier_rank=0):
-                if deepspeed.comm.get_rank() == 0:
-                    pipeline = StableVideoDiffusionPipeline(
-                        image_encoder=image_encoder,
-                        vae=vae,
-                        unet=unet_ckpt,
-                        scheduler=noise_scheduler,
-                        feature_extractor=feature_extractor,
-                    )
-                    pipeline.save_pretrained(save_path)
+            # save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
+            # unet_ckpt = accelerator.unwrap_model(unet)
+            # with deepspeed.zero.GatheredParameters(unet_ckpt.parameters(), modifier_rank=0):
+            #     if deepspeed.comm.get_rank() == 0:
+            #         pipeline = StableVideoDiffusionPipeline(
+            #             image_encoder=image_encoder,
+            #             vae=vae,
+            #             unet=unet_ckpt,
+            #             scheduler=noise_scheduler,
+            #             feature_extractor=feature_extractor,
+            #         )
+            #         pipeline.save_pretrained(save_path)
 
             # batch['pixel_values'] = batch['pixel_values'][:, :3]
             # batch['images'] = batch['images'][:3]
