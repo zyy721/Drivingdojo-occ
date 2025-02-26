@@ -20,7 +20,8 @@ ema = True
 
 load_from = ''
 # vae_load_from = 'ckpts/occvae_latest.pth'
-vae_load_from = 'examples/world_model/utils/DOME/ckpts/occvae_latest.pth'
+# vae_load_from = 'examples/world_model/utils/DOME/ckpts/occvae_latest.pth'
+vae_load_from = '../ckpts/occvae_latest.pth'
 port = 25098
 revise_ckpt = 3
 eval_every_epochs = 10
