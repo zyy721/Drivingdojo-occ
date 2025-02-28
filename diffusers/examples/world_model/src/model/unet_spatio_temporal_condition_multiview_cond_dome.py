@@ -225,13 +225,14 @@ class UNetSpatioTemporalConditionModelMultiviewCondDome(UNetSpatioTemporalCondit
                                      stride=1,
                                      padding=1))
 
-        
+        self.cur_num_frames = cur_num_frames
         
     def convert_3d_to_2d(
         self,
         occ_latent,
         metas,
     ):
+        # [2, 64, 2, 25, 25]
         occ_latent = rearrange(occ_latent, 'b c f h w -> (b f) c h w').contiguous()
 
         volume_feats = self.ProjResnetBlock_0(occ_latent)
@@ -239,12 +240,18 @@ class UNetSpatioTemporalConditionModelMultiviewCondDome(UNetSpatioTemporalCondit
 
         volume_feats = rearrange(volume_feats, 'b (d c_new) h w -> b c_new d h w', d=4)
 
-
+        # [(2 6), 2, 4, 4]
         padcam2ego = metas[0]['new_cam2ego']
         cam_intrinsic = metas[0]['new_cam_intrinsic']
         
-        padcam2ego = torch.tensor(padcam2ego).permute(1, 0, 2, 3).to(volume_feats.device)
-        cam_intrinsic = torch.tensor(cam_intrinsic).permute(1, 0, 2, 3).to(volume_feats.device)
+        # padcam2ego = torch.tensor(padcam2ego).permute(1, 0, 2, 3).to(volume_feats.device)
+        # cam_intrinsic = torch.tensor(cam_intrinsic).permute(1, 0, 2, 3).to(volume_feats.device)
+
+        padcam2ego = torch.tensor(padcam2ego).to(volume_feats.device)
+        cam_intrinsic = torch.tensor(cam_intrinsic).to(volume_feats.device)
+
+        padcam2ego = rearrange(padcam2ego, '(b n_cam) f h w -> (b f) n_cam h w', n_cam=6)
+        cam_intrinsic = rearrange(cam_intrinsic, '(b n_cam) f h w -> (b f) n_cam h w', n_cam=6)
 
         T = padcam2ego
         K = cam_intrinsic
@@ -258,7 +265,8 @@ class UNetSpatioTemporalConditionModelMultiviewCondDome(UNetSpatioTemporalCondit
         volume_feats = self.ProjResnetBlock_1(volume_feats)
         volume_feats = self.connector(volume_feats)
 
-        volume_feats = rearrange(volume_feats, '(f n_cam) c h w -> n_cam f c h w', n_cam=6).contiguous()
+        # volume_feats = rearrange(volume_feats, '(f n_cam) c h w -> n_cam f c h w', n_cam=6).contiguous()
+        volume_feats = rearrange(volume_feats, '(b f n_cam) c h w -> (b n_cam) f c h w', n_cam=6, f=self.cur_num_frames).contiguous()
 
         return volume_feats
 

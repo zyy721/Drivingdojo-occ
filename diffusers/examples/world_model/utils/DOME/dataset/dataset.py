@@ -19,7 +19,12 @@ import re
 
 from torchvision import transforms
 from torchvision import transforms as tr
-from examples.world_model.utils.image_datasets import default_loader
+# from examples.world_model.utils.image_datasets import default_loader
+
+try:
+    from examples.world_model.utils.image_datasets import default_loader
+except:
+    from utils.image_datasets import default_loader
 
 
 @OPENOCC_DATASET.register_module()
@@ -86,9 +91,13 @@ class nuScenesSceneDatasetLidar:
         self.idx_permute_img = np.array([2, 0, 1, 5, 3, 4])
         self.view_order = ["CAM_FRONT_LEFT", "CAM_FRONT", "CAM_FRONT_RIGHT", "CAM_BACK_RIGHT", "CAM_BACK", "CAM_BACK_LEFT"]
 
-        permute_img_list = []
-        for idx in self.idx_permute_img:
-            permute_img_list.append(self.cur_origin_img_list[idx])
+        # permute_img_list = []
+        # for idx in self.idx_permute_img:
+        #     permute_img_list.append(self.cur_origin_img_list[idx])
+
+        self.train = True
+        if 'val' in imageset:
+            self.train = False
 
 
     def load_and_transform_frames(self, frame_list, loader, img_transform=None, img_size=(576,320)):
@@ -206,14 +215,24 @@ class nuScenesSceneDatasetLidar:
         all_camera_intrinsics = all_camera_intrinsics[self.idx_permute_img]
         all_camera2ego = all_camera2ego[self.idx_permute_img]
 
-        for i in range(return_len + self.offset):
-            cur_nusc_info = self.nusc_infos[scene_name][idx+i]
-            cam_front_list.append('.' + cur_nusc_info['cams']['CAM_FRONT']['data_path'])
-            cam_front_right_list.append('.' + cur_nusc_info['cams']['CAM_FRONT_RIGHT']['data_path'])
-            cam_front_left_list.append('.' + cur_nusc_info['cams']['CAM_FRONT_LEFT']['data_path'])
-            cam_back_list.append('.' + cur_nusc_info['cams']['CAM_BACK']['data_path'])
-            cam_back_left_list.append('.' + cur_nusc_info['cams']['CAM_BACK_LEFT']['data_path'])
-            cam_back_right_list.append('.' + cur_nusc_info['cams']['CAM_BACK_RIGHT']['data_path'])
+        if self.train:
+            for i in range(return_len + self.offset):
+                cur_nusc_info = self.nusc_infos[scene_name][idx+i]
+                cam_front_list.append('.' + cur_nusc_info['cams']['CAM_FRONT']['data_path'])
+                cam_front_right_list.append('.' + cur_nusc_info['cams']['CAM_FRONT_RIGHT']['data_path'])
+                cam_front_left_list.append('.' + cur_nusc_info['cams']['CAM_FRONT_LEFT']['data_path'])
+                cam_back_list.append('.' + cur_nusc_info['cams']['CAM_BACK']['data_path'])
+                cam_back_left_list.append('.' + cur_nusc_info['cams']['CAM_BACK_LEFT']['data_path'])
+                cam_back_right_list.append('.' + cur_nusc_info['cams']['CAM_BACK_RIGHT']['data_path'])
+        else:
+            for i in range(return_len + self.offset):
+                cur_nusc_info = self.nusc_infos[scene_name][idx+i]
+                cam_front_list.append('../../.' + cur_nusc_info['cams']['CAM_FRONT']['data_path'])
+                cam_front_right_list.append('../../.' + cur_nusc_info['cams']['CAM_FRONT_RIGHT']['data_path'])
+                cam_front_left_list.append('../../.' + cur_nusc_info['cams']['CAM_FRONT_LEFT']['data_path'])
+                cam_back_list.append('../../.' + cur_nusc_info['cams']['CAM_BACK']['data_path'])
+                cam_back_left_list.append('../../.' + cur_nusc_info['cams']['CAM_BACK_LEFT']['data_path'])
+                cam_back_right_list.append('../../.' + cur_nusc_info['cams']['CAM_BACK_RIGHT']['data_path'])
 
         all_cam_dict = {"CAM_FRONT_LEFT": cam_front_left_list, "CAM_FRONT": cam_front_list, "CAM_FRONT_RIGHT": cam_front_right_list, 
                         "CAM_BACK_RIGHT": cam_back_right_list, "CAM_BACK": cam_back_list, "CAM_BACK_LEFT": cam_back_left_list}

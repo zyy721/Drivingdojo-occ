@@ -9,9 +9,11 @@ end_frame = 10
 eval_length = end_frame-mid_frame
 
 # return_len_train = 11
-return_len_train = 2
+return_len_train = 2 
 
-return_len_ = 10
+# return_len_ = 10
+return_len_ = 2
+
 grad_max_norm = 1
 print_freq = 1
 max_epochs = 2000
