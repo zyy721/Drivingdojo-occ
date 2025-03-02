@@ -20,6 +20,8 @@ from copy import deepcopy
 
 from einops import rearrange
 
+from utils.gen_mtp import generate_proj_sem_map
+
 
 def concat_images(images, direction='horizontal', pad=0, pad_value=0):
     if len(images) == 1:
@@ -231,7 +233,10 @@ with torch.no_grad():
 
             cat_cur_multiview_imgs.save('{:06d}_{}.jpg'.format(idx, idx_frame))
 
-        imageio.mimsave(os.path.join(output_folder, '{:06d}.mp4'.format(idx)), all_multiview_imgs, fps=2)
+        # imageio.mimsave(os.path.join(output_folder, '{:06d}.mp4'.format(idx)), all_multiview_imgs, fps=2)
+
+        generate_proj_sem_map(index=metas[0]["index"], idx=metas[0]['idx'], return_len=length)
+
         idx += 1
 
 

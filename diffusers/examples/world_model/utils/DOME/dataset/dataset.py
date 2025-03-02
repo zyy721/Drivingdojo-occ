@@ -168,6 +168,9 @@ class nuScenesSceneDatasetLidar:
 
         metas.update(new_cam_intrinsic=all_camera_intrinsics, new_cam2ego=all_camera2ego)
 
+        if not self.train:
+            metas.update(index=index, idx=idx)
+
         return input_occs[:self.return_len], output_occs[self.offset:], pixel_values, images, metas
 
 
